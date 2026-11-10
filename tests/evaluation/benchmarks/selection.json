@@ -1,0 +1,726 @@
+{
+ "profile": "core",
+ "generatedFrom": "sources.json pinned commits",
+ "cases": [
+  {
+   "caseId": "case-0b45df78737e",
+   "dataset": "faithbench",
+   "family": "b49ba02e826ee481",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-102c8ddadb74",
+   "dataset": "faithbench",
+   "family": "0e0d6028fed2153c",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-14bd40cab65d",
+   "dataset": "faithbench",
+   "family": "a0c0aa798caaa3d0",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-17970971a775",
+   "dataset": "faithbench",
+   "family": "365c46000bbb564e",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-1a5c0be95b8c",
+   "dataset": "faithbench",
+   "family": "da8bde8364fe09d1",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-1c24ab265687",
+   "dataset": "faithbench",
+   "family": "841ed085d95e6960",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-1d67b7875784",
+   "dataset": "faithbench",
+   "family": "da8bde8364fe09d1",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-1df9d66fcf7b",
+   "dataset": "faithbench",
+   "family": "d7b35fd68ece0452",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-2201cf1b9684",
+   "dataset": "faithbench",
+   "family": "841ed085d95e6960",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-247b9957ada8",
+   "dataset": "faithbench",
+   "family": "072cdb7443ee8cbe",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-2c1352ca09ae",
+   "dataset": "faithbench",
+   "family": "cbb2832e8c559e3b",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-359de7c6c3a7",
+   "dataset": "faithbench",
+   "family": "b49ba02e826ee481",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-39bf4fa7e719",
+   "dataset": "faithbench",
+   "family": "42004a28109b5ccd",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-468d693cb34c",
+   "dataset": "faithbench",
+   "family": "0e0d6028fed2153c",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-54454b007cd4",
+   "dataset": "faithbench",
+   "family": "97767103aa510df9",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-5801a87c07b5",
+   "dataset": "faithbench",
+   "family": "97767103aa510df9",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-588f778dcd71",
+   "dataset": "faithbench",
+   "family": "072cdb7443ee8cbe",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5af248d8da9f",
+   "dataset": "faithbench",
+   "family": "074b12449ab4413b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5cf93923457f",
+   "dataset": "faithbench",
+   "family": "42004a28109b5ccd",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5d3ee4d30be5",
+   "dataset": "faithbench",
+   "family": "a7c07d3d6d758039",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-6406130e3554",
+   "dataset": "faithbench",
+   "family": "074b12449ab4413b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-64969fbed631",
+   "dataset": "faithbench",
+   "family": "cbb2832e8c559e3b",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-6c869d84aec8",
+   "dataset": "faithbench",
+   "family": "320e6744c350478b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-71a6d1bd0db8",
+   "dataset": "faithbench",
+   "family": "da8bde8364fe09d1",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-7b1f94382336",
+   "dataset": "faithbench",
+   "family": "cbb2832e8c559e3b",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-7be5961e7737",
+   "dataset": "faithbench",
+   "family": "a7c07d3d6d758039",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-7d5ad9c28069",
+   "dataset": "faithbench",
+   "family": "97767103aa510df9",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-7d952f90c4f9",
+   "dataset": "faithbench",
+   "family": "0e0d6028fed2153c",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-7f77330d276b",
+   "dataset": "faithbench",
+   "family": "2fcca0630c015bdb",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-93bdf655624f",
+   "dataset": "faithbench",
+   "family": "d7b35fd68ece0452",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-9b5493d6704a",
+   "dataset": "faithbench",
+   "family": "841ed085d95e6960",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-a1736338383d",
+   "dataset": "faithbench",
+   "family": "072cdb7443ee8cbe",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-aedefbc6c69e",
+   "dataset": "faithbench",
+   "family": "d7b35fd68ece0452",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-b260ee93f77d",
+   "dataset": "faithbench",
+   "family": "365c46000bbb564e",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-c38d180d9cfd",
+   "dataset": "faithbench",
+   "family": "9134661eef015bb5",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-c6aa7bd538ef",
+   "dataset": "faithbench",
+   "family": "074b12449ab4413b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-dba31dcf3dcb",
+   "dataset": "faithbench",
+   "family": "320e6744c350478b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-dba81c718c96",
+   "dataset": "faithbench",
+   "family": "a0c0aa798caaa3d0",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-dcb0e61b6c17",
+   "dataset": "faithbench",
+   "family": "42004a28109b5ccd",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-e216cd41b17f",
+   "dataset": "faithbench",
+   "family": "2fcca0630c015bdb",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-e4493213a76f",
+   "dataset": "faithbench",
+   "family": "9134661eef015bb5",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-e5d8a272f4ee",
+   "dataset": "faithbench",
+   "family": "a7c07d3d6d758039",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-ef5c204cf61e",
+   "dataset": "faithbench",
+   "family": "320e6744c350478b",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-f2518bb09267",
+   "dataset": "faithbench",
+   "family": "a0c0aa798caaa3d0",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-f71e8a2523a2",
+   "dataset": "faithbench",
+   "family": "9134661eef015bb5",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-f79c2f7f9323",
+   "dataset": "faithbench",
+   "family": "2fcca0630c015bdb",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-f85947b9f09d",
+   "dataset": "faithbench",
+   "family": "b49ba02e826ee481",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-fa84942df604",
+   "dataset": "faithbench",
+   "family": "365c46000bbb564e",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-04b3aae9709f",
+   "dataset": "financebench",
+   "family": "Lockheed Martin",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-107b3c85b98b",
+   "dataset": "financebench",
+   "family": "MGM Resorts",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-1dbae7a9e8e6",
+   "dataset": "financebench",
+   "family": "Lockheed Martin",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-39d202a3ef96",
+   "dataset": "financebench",
+   "family": "Amcor",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-402d286e09f2",
+   "dataset": "financebench",
+   "family": "Lockheed Martin",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-464f4af89c00",
+   "dataset": "financebench",
+   "family": "Nike",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-50767ee67176",
+   "dataset": "financebench",
+   "family": "Amcor",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5689012602a5",
+   "dataset": "financebench",
+   "family": "Walmart",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5fbcc3b9ec4a",
+   "dataset": "financebench",
+   "family": "Nike",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-6080d243ecc6",
+   "dataset": "financebench",
+   "family": "General Mills",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-645e0760a066",
+   "dataset": "financebench",
+   "family": "Lockheed Martin",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-6840619713d6",
+   "dataset": "financebench",
+   "family": "PepsiCo",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-6a932e5b6a84",
+   "dataset": "financebench",
+   "family": "MGM Resorts",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-728b6c9fe4eb",
+   "dataset": "financebench",
+   "family": "MGM Resorts",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-7839ca4329e9",
+   "dataset": "financebench",
+   "family": "Activision Blizzard",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-7b47c457d7dc",
+   "dataset": "financebench",
+   "family": "Walmart",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-7effd91cc7a2",
+   "dataset": "financebench",
+   "family": "Activision Blizzard",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-83a6a4768fa0",
+   "dataset": "financebench",
+   "family": "PepsiCo",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-85a50c634798",
+   "dataset": "financebench",
+   "family": "PepsiCo",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-87ac25c7f292",
+   "dataset": "financebench",
+   "family": "Nike",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-8ef7537d81f4",
+   "dataset": "financebench",
+   "family": "Amcor",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-955ed8ad7a7b",
+   "dataset": "financebench",
+   "family": "Walmart",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-9bee72c838a8",
+   "dataset": "financebench",
+   "family": "PepsiCo",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-9f947d768b95",
+   "dataset": "financebench",
+   "family": "Amcor",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-a6789f8cff66",
+   "dataset": "financebench",
+   "family": "General Mills",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-bee144b7c2f0",
+   "dataset": "financebench",
+   "family": "Nike",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-bff01738eb1b",
+   "dataset": "financebench",
+   "family": "General Mills",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-c244d842e7de",
+   "dataset": "financebench",
+   "family": "MGM Resorts",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-ce314d1da4b5",
+   "dataset": "financebench",
+   "family": "Walmart",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-d29dad51872c",
+   "dataset": "financebench",
+   "family": "General Mills",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-fd1d9b9fe21c",
+   "dataset": "financebench",
+   "family": "Activision Blizzard",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-fe0565a57c80",
+   "dataset": "financebench",
+   "family": "Activision Blizzard",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-08c82dd42db4",
+   "dataset": "ragtruth",
+   "family": "15744",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-0a518edebc8e",
+   "dataset": "ragtruth",
+   "family": "11877",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-0c209cdd8d72",
+   "dataset": "ragtruth",
+   "family": "15618",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-0cc9c1c17253",
+   "dataset": "ragtruth",
+   "family": "11873",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-1461c995f5ac",
+   "dataset": "ragtruth",
+   "family": "11877",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-28d8fce988d8",
+   "dataset": "ragtruth",
+   "family": "11395",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-33abdea1ca50",
+   "dataset": "ragtruth",
+   "family": "13525",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-409aa7d03205",
+   "dataset": "ragtruth",
+   "family": "15816",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-42a59d2836bd",
+   "dataset": "ragtruth",
+   "family": "15627",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-439b84a767a0",
+   "dataset": "ragtruth",
+   "family": "11332",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-4a05397b5024",
+   "dataset": "ragtruth",
+   "family": "11395",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-541dac0014fa",
+   "dataset": "ragtruth",
+   "family": "11410",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-54f8c92bd1ad",
+   "dataset": "ragtruth",
+   "family": "15620",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-5d02e9e14d2d",
+   "dataset": "ragtruth",
+   "family": "13518",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-72525db459a3",
+   "dataset": "ragtruth",
+   "family": "15816",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-73a6d1d14033",
+   "dataset": "ragtruth",
+   "family": "11836",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-766700b42217",
+   "dataset": "ragtruth",
+   "family": "11890",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-76bb6d6f0634",
+   "dataset": "ragtruth",
+   "family": "15722",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-79931f4c969b",
+   "dataset": "ragtruth",
+   "family": "13492",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-7d2df20c5873",
+   "dataset": "ragtruth",
+   "family": "15618",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-8547b11b359b",
+   "dataset": "ragtruth",
+   "family": "13525",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-8916c7322fdd",
+   "dataset": "ragtruth",
+   "family": "15627",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-8edc0046e34b",
+   "dataset": "ragtruth",
+   "family": "15722",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-8efb1eddf54a",
+   "dataset": "ragtruth",
+   "family": "11930",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-94b6997350df",
+   "dataset": "ragtruth",
+   "family": "12013",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-94bd293c3f53",
+   "dataset": "ragtruth",
+   "family": "11410",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-94e356b126af",
+   "dataset": "ragtruth",
+   "family": "15620",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-9979fab1fd02",
+   "dataset": "ragtruth",
+   "family": "11317",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-ad8055f46667",
+   "dataset": "ragtruth",
+   "family": "12053",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-b8a9b0d224d6",
+   "dataset": "ragtruth",
+   "family": "13492",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-ba4d80cc651d",
+   "dataset": "ragtruth",
+   "family": "13518",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-ddc1ca950b7b",
+   "dataset": "ragtruth",
+   "family": "11836",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-e24a30f3dd5e",
+   "dataset": "ragtruth",
+   "family": "11890",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-e480ae18ab89",
+   "dataset": "ragtruth",
+   "family": "15744",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-e48f71c322bb",
+   "dataset": "ragtruth",
+   "family": "12053",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-ea285e4e5db5",
+   "dataset": "ragtruth",
+   "family": "11930",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-ecac95df7d6a",
+   "dataset": "ragtruth",
+   "family": "11332",
+   "partition": "final"
+  },
+  {
+   "caseId": "case-f1e05ca07cf6",
+   "dataset": "ragtruth",
+   "family": "12013",
+   "partition": "development"
+  },
+  {
+   "caseId": "case-f4ec328d8d81",
+   "dataset": "ragtruth",
+   "family": "11873",
+   "partition": "calibration"
+  },
+  {
+   "caseId": "case-f79a54080d11",
+   "dataset": "ragtruth",
+   "family": "11317",
+   "partition": "final"
+  }
+ ]
+}

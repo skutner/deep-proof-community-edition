@@ -6,7 +6,8 @@ import os from 'node:os';
 import path from 'node:path';
 import http from 'node:http';
 import {createApp} from '../server.mjs';
-import {readArtifact,writeArtifact} from '../src/safe-files.mjs';
+import {readArtifact,writeArtifact,openInside} from '../src/safe-files.mjs';
+import {closeSync} from 'node:fs';
 import {validateChartFiles,safeSVG} from '../src/charts-validation.mjs';
 import {parseMarkdownReport,validateMarkdownReport} from '../src/markdown-report.mjs';
 
@@ -21,6 +22,23 @@ test('artifact reads and writes reject traversal, symlink parents, hard links an
   await assert.rejects(validateChartFiles(root,{chartFiles:['chart.svg'],citations:{e1:{}}}),/regular CSV/);
   await fs.symlink(path.join(outside,'secret'),path.join(root,'report.md'));assert.throws(()=>writeArtifact(root,'report.md','overwrite'),/symbolic/);
   writeArtifact(root,'safe.md','safe text');assert.equal(readArtifact(root,'safe.md').toString(),'safe text');assert.throws(()=>readArtifact(root,'safe.md',3),/size limit/);
+ }finally{await fs.rm(dir,{recursive:true,force:true});}
+});
+test('the open of an artifact refuses a folder that became a link after the path was checked, and any path outside the folder',async()=>{
+ const dir=await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(),'analyst-open-')));
+ try{
+  const root=path.join(dir,'job'),outside=path.join(dir,'private');await fs.mkdir(path.join(root,'charts'),{recursive:true});await fs.mkdir(outside);
+  await fs.writeFile(path.join(outside,'data.csv'),'private');await fs.writeFile(path.join(root,'charts','data.csv'),'public');
+  // The state after the path check passed and the folder was then swapped: the checked path now leads outside.
+  await fs.rename(path.join(root,'charts'),path.join(root,'charts-moved'));await fs.symlink(outside,path.join(root,'charts'));
+  assert.throws(()=>openInside(path.join(root,'charts','data.csv'),root),/resolved outside its folder|must not contain symbolic links/);
+  await fs.unlink(path.join(root,'charts'));await fs.symlink(path.join(outside,'data.csv'),path.join(root,'last-is-link.csv'));
+  assert.throws(()=>openInside(path.join(root,'last-is-link.csv'),root),/ELOOP|must not contain symbolic links/);
+  // Without a link, a path that leaves the folder is refused by the open itself as well, on both systems.
+  assert.throws(()=>openInside(path.join(root,'..','private','data.csv'),root),/resolved outside its folder/);
+  assert.throws(()=>openInside(path.join(outside,'data.csv'),root),/resolved outside its folder/);
+  const fd=openInside(path.join(root,'charts-moved','data.csv'),root);closeSync(fd);
+  assert.equal(readArtifact(root,'charts-moved/data.csv').toString(),'public');
  }finally{await fs.rm(dir,{recursive:true,force:true});}
 });
 test('prototype-shaped footnotes are not inherited citations and active SVG is rejected',async()=>{

@@ -146,7 +146,7 @@ npm test
 npm run check
 ```
 
-These default commands run small local tests only: authentication, authorization, passwords, administration, archived analyses and report/citation validation. They do not call ALA or any LLM. The report fixture in `tests/fixtures/revenue-review.json` contains the input and actual output of a successful ALA → Codex → `gpt-6-luna` run captured on 2026-10-07. Tests reuse it without regenerating it or simulating an AI agent. Security regression tests cover artifact traversal and links, active SVG rejection, revoked sessions, malformed request bodies, split UTF-8 input and private report metadata.
+These default commands run small local tests only: authentication, authorization, passwords, administration, archived analyses and report/citation validation. They do not call ALA or any LLM. They also run on macOS, where three tests that unpack an Analyst Skill archive fail because they need Bubblewrap; the application itself still needs Linux, as listed under Install. The report fixture in `tests/fixtures/revenue-review.json` contains the input and actual output of a successful ALA → Codex → `gpt-6-luna` run captured on 2026-10-07. Tests reuse it without regenerating it or simulating an AI agent. Security regression tests cover artifact traversal and links, active SVG rejection, revoked sessions, malformed request bodies, split UTF-8 input and private report metadata.
 
 Optional browser checks are separate:
 

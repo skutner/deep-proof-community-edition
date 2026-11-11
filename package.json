@@ -5,10 +5,10 @@
   "type": "module",
   "scripts": {
     "start": "node server.mjs",
-    "test": "node --test --test-isolation=none tests/*.test.mjs",
+    "test": "node --import ./tests/support/canonical-tmp.mjs --test --test-isolation=none tests/*.test.mjs",
     "check": "node --check server.mjs && node --check web/app.js && node --check web/review-rules.js && node --check web/access.js && node --check web/configuration.js && node --check web/i18n.js && npm test",
-    "test:llm": "node --test --test-isolation=none tests/live/*.test.mjs",
-    "test:browser": "node --test --test-isolation=none tests/browser/*.test.mjs"
+    "test:llm": "node --import ./tests/support/canonical-tmp.mjs --test --test-isolation=none tests/live/*.test.mjs",
+    "test:browser": "node --import ./tests/support/canonical-tmp.mjs --test --test-isolation=none tests/browser/*.test.mjs"
   },
   "engines": {
     "node": ">=24"

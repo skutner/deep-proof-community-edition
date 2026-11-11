@@ -1,0 +1,8 @@
+{
+ "always-problem": {"kind": "constant", "verdict": "problem"},
+ "always-clear": {"kind": "constant", "verdict": "no_problem"},
+ "plain": {"kind": "agent", "prompt": "prompts/plain.md", "pdfText": true},
+ "plain-careful": {"kind": "agent", "prompt": "prompts/plain-careful.md", "pdfText": true},
+ "deep-proof-check": {"kind": "check", "depth": "deep", "flagCategories": ["F01", "F02", "F03", "F06"]},
+ "deep-proof-triage": {"kind": "check", "depth": "triage", "flagCategories": ["F01", "F02", "F03", "F06"]}
+}

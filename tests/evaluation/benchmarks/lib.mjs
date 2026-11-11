@@ -168,14 +168,25 @@ export function wilson(k,n,z=1.96){
  if(!n)return null;const p=k/n,d=1+z*z/n,center=(p+z*z/(2*n))/d,half=z*Math.sqrt(p*(1-p)/n+z*z/(4*n*n))/d;
  return [Math.max(0,center-half),Math.min(1,center+half)].map(x=>Math.round(x*10000)/10000);
 }
-const rate=(k,n)=>({value:n?Math.round(k/n*10000)/10000:null,k,n,ci95:wilson(k,n)});
+export const rate=(k,n)=>({value:n?Math.round(k/n*10000)/10000:null,k,n,ci95:wilson(k,n)});
 
 // predictions: {caseId:{verdict:'problem'|'no_problem',quotes?:string[]}}, quotes being exact AI-output text.
-// Missing predictions are reported, never scored as negatives.
+// A review that ran but produced no usable verdict is recorded as {caseId:{failed:true,reason?:string}}.
+// Missing predictions are reported, never scored as negatives. Failed reviews are counted: the existing rates
+// leave them out, and the "CountingFailures" rates treat each one as a wrong answer, so a reviewer cannot
+// improve its score by failing on hard cases.
+// One entry is either a verdict or {failed:true}, never both, here and in the paired comparison.
+export function checkPrediction(id,p){
+ if(p?.failed!==undefined&&p.failed!==true&&p.failed!==false)throw Error(`${id}: "failed" must be true or false; a failed review is {"failed":true} without a verdict.`);
+ if(p?.failed===true){if(p.verdict!==undefined)throw Error(`${id}: a failed review is {"failed":true} and must not carry a verdict.`);}
+ else if(!['problem','no_problem'].includes(p?.verdict))throw Error(`${id}: verdict must be problem or no_problem, or the entry must be {"failed":true}.`);
+}
 export function score(gold,predictions){
- for(const [id,p] of Object.entries(predictions))if(!['problem','no_problem'].includes(p?.verdict))throw Error(`${id}: verdict must be problem or no_problem.`);
- const groups=new Map(),add=(key,g,p)=>{if(!groups.has(key))groups.set(key,{tp:0,fp:0,fn:0,tn:0,missing:0,ambiguous:0,ambiguousFlagged:0,refusal:0,refusalFlagged:0,issues:0,issuesHit:0,quotes:0,unlocatedQuotes:0});
-  const s=groups.get(key);if(!p){s.missing++;return;}const flagged=p.verdict==='problem',v=g.expected.verdict;
+ for(const [id,p] of Object.entries(predictions))checkPrediction(id,p);
+ const groups=new Map(),add=(key,g,p)=>{if(!groups.has(key))groups.set(key,{tp:0,fp:0,fn:0,tn:0,missing:0,failed:0,failedProblem:0,failedClean:0,ambiguous:0,ambiguousFlagged:0,refusal:0,refusalFlagged:0,issues:0,issuesHit:0,quotes:0,unlocatedQuotes:0});
+  const s=groups.get(key);if(!p){s.missing++;return;}
+  if(p.failed===true){s.failed++;if(g.expected.verdict==='problem')s.failedProblem++;else if(g.expected.verdict==='no_problem')s.failedClean++;return;}
+  const flagged=p.verdict==='problem',v=g.expected.verdict;
   const located=(p.quotes??[]).map(q=>locateQuoteAll(g.aiOutput??'',q));s.quotes+=located.length;s.unlocatedQuotes+=located.filter(found=>!found.length).length;
   if(v==='ambiguous'){s.ambiguous++;s.ambiguousFlagged+=flagged;return;}
   if(v==='refusal'){s.refusal++;s.refusalFlagged+=flagged;return;}
@@ -189,6 +200,8 @@ export function score(gold,predictions){
  const result={unknownPredictions:unknown,groups:{}};
  for(const [key,s] of groups)result.groups[key]={counts:s,precision:rate(s.tp,s.tp+s.fp),recall:rate(s.tp,s.tp+s.fn),
   cleanControlFalsePositiveRate:rate(s.fp,s.fp+s.tn),refusalFlagRate:rate(s.refusalFlagged,s.refusal),ambiguousFlagRate:rate(s.ambiguousFlagged,s.ambiguous),
-  labelledIssueRecall:rate(s.issuesHit,s.issues),quotesNotInOutput:s.unlocatedQuotes};
+  labelledIssueRecall:rate(s.issuesHit,s.issues),quotesNotInOutput:s.unlocatedQuotes,
+  failureRate:rate(s.failed,s.failed+s.tp+s.fp+s.fn+s.tn+s.ambiguous+s.refusal),
+  recallCountingFailures:rate(s.tp,s.tp+s.fn+s.failedProblem),cleanControlPassRateCountingFailures:rate(s.tn,s.tn+s.fp+s.failedClean)};
  return result;
 }

@@ -16,7 +16,7 @@ import {CHECK_MINUTES} from '../../../src/run-limits.mjs';
 
 const here=path.dirname(fileURLToPath(import.meta.url));
 export const appRoot=path.resolve(here,'..','..','..');
-export const RUNNER_VERSION=2;
+export const RUNNER_VERSION=3;
 export const VERDICTS=['problem','no_problem'];
 // After this many attempts that ended in an error, a unit waits for an operator decision instead of running again.
 export const MAX_ERROR_ATTEMPTS=3;
@@ -81,7 +81,7 @@ function arenaHazards(root,depth=4){
 // The runner needs dossiers only, never answer keys. It checks the folder layout; it cannot observe what the
 // agent sandbox mounts, so the best status is "isolated_as_attested" (the term used by lean_documents/evalsuite).
 // arena is null when no agent arm runs (Check Report works in an operating-system temporary folder).
-export function blindness({dossiers,arena=null,out,allowVisibleKeys=false,repository=appRoot}){
+export function blindness({dossiers,arena=null,out,agentHome=null,allowVisibleKeys=false,repository=appRoot}){
  const real=target=>{let current=path.resolve(target);const tail=[];while(!fsSync.existsSync(current)){tail.unshift(path.basename(current));current=path.dirname(current);}return path.join(fsSync.realpathSync(current),...tail);};
  const inside=(child,parent)=>{const relative=path.relative(parent,child);return relative===''||(relative!=='..'&&!relative.startsWith('..'+path.sep)&&!path.isAbsolute(relative));};
  const overlap=(a,b)=>inside(a,b)||inside(b,a);
@@ -89,6 +89,8 @@ export function blindness({dossiers,arena=null,out,allowVisibleKeys=false,reposi
  if(a&&overlap(a,o))problems.push('The arena and the output folder must not contain each other: agents work in the arena, and records of other runs are kept outside it.');
  if(a&&overlap(a,d))problems.push('The arena and the dossier folder must not contain each other.');
  if(overlap(o,d))problems.push('The output folder and the dossier folder must not contain each other.');
+ const h=agentHome?real(agentHome):null;
+ if(h&&(overlap(h,o)||overlap(h,d)||(a&&overlap(h,a))))problems.push('The --agent-home folder must not contain, or lie inside, the arena, the output folder or the dossier folder: it holds a login.');
  if(problems.length)throw Error(problems.join(' '));
  const visibleKeys=[];
  const beside=path.join(path.dirname(d),'gold');if(fsSync.existsSync(beside))visibleKeys.push(`${beside} (answer keys next to the dossiers)`);
@@ -175,7 +177,9 @@ async function readAgentPrediction(workDir){
 // engine of a check running in the in-process Deep Proof instance.
 const listProcesses=()=>spawnSync('ps',['-A','-o','pid=,ppid='],{encoding:'utf8'});
 // Without a process listing the runner could not stop a check's engine, so a campaign must not start.
-export const canListProcesses=()=>{const listed=listProcesses();return listed.status===0&&listed.stdout.split('\n').some(line=>Number(line.trim().split(/\s+/)[0])===process.pid);};
+export const canListProcesses=()=>{const listed=listProcesses();return listed.status===0&&listed.stdout.split('\n').some(line=>Number(line.trim().split(/\s+/)[0])===process.pid)&&commandsListed();};
+// The second listing the runner depends on: command lines, to see whether a sandbox still uses a review's home.
+const commandsListed=()=>spawnSync('ps',['-A','-ww','-o','args='],{encoding:'utf8',maxBuffer:64*1024*1024}).status===0;
 export function stopEngines(){
  const listed=listProcesses();if(listed.status!==0)return 0;
  let stopped=0;
@@ -209,16 +213,100 @@ export async function clearArena(arena,archive){
  const left=arenaWorkFolders(arena);for(const name of left)await moveFolder(path.join(arena,name),archive);
  return left.length;
 }
+
+// ---------- a private agent home for each review ----------
+// ALA mounts the saved state of the coding agent (for Codex, ~/.codex) into its sandbox unless it is given a home.
+// Deep Proof gives it one for every analysis: the home folder of the user who runs it (src/ala.mjs), all of it.
+// Either way a review could read what an earlier review left, and Check Report could read anything kept under
+// that home folder, such as answer keys or this campaign's records. For a campaign every review therefore gets
+// a home of its own, copied from a folder that holds only a login, and nothing is copied back.
+const HOME_FOLDER=/^home-[0-9a-f]{16}$/;
+export const HOME_LIMITS={files:200,bytes:20_000_000};
+// Homes live in one folder of the campaign, whatever arms run, so that a later invocation finds and removes what
+// a stopped runner left. ALA binds a single home into a sandbox, never this folder, so one review cannot reach
+// the home of another or the records beside it.
+export const homesRoot=out=>path.join(out,'agent-homes');
+// -ww: without it some ps versions cut each line to the terminal width, and a cut line would hide the home.
+const listCommands=()=>spawnSync('ps',['-A','-ww','-o','args='],{encoding:'utf8',maxBuffer:64*1024*1024});
+// The sandbox of a review carries the review's home on its command line (bwrap ... --bind <home> /home/ala). While
+// any process does, something may still be writing there, and the home must be neither removed nor examined.
+export async function sandboxGone(home,{tries=60,waitMs=250}={}){
+ // A home's own name is unique, so it is found however the path to the campaign folder was spelled.
+ const name=path.basename(home),wanted=HOME_FOLDER.test(name)?name:home;
+ for(let i=0;i<tries;i++){const listed=listCommands();if(listed.status===0&&!listed.stdout.includes(wanted)){await sleep(waitMs);return true;}await sleep(waitMs);}
+ return false;
+}
+// The template must be small and free of links: a used home holds the history of earlier sessions.
+export function checkHomeTemplate(template){
+ let info=null;try{info=fsSync.lstatSync(template);}catch{}
+ if(!info?.isDirectory())throw Error(`--agent-home must be an existing folder: ${template}`);
+ const found=[];let bytes=0;
+ const visit=dir=>{for(const entry of fsSync.readdirSync(dir,{withFileTypes:true}).sort((a,b)=>a.name.localeCompare(b.name))){
+  const full=path.join(dir,entry.name);
+  if(entry.isSymbolicLink())throw Error(`--agent-home holds a link (${full}). It must hold only a login made for this campaign.`);
+  if(entry.isDirectory())visit(full);else if(entry.isFile()){found.push(full);bytes+=fsSync.statSync(full).size;}
+ }};
+ visit(template);
+ if(!found.length)throw Error(`--agent-home is empty. Sign the coding agent in there first: ${template}`);
+ if(found.length>HOME_LIMITS.files||bytes>HOME_LIMITS.bytes)throw Error(`--agent-home holds ${found.length} files and ${bytes} bytes. It should hold only a login, not the history or caches of earlier sessions.`);
+ return Object.fromEntries(found.map(full=>[path.relative(template,full).split(path.sep).join('/'),sha256(fsSync.readFileSync(full))]));
+}
+export async function openHome(template,root){
+ const listed=checkHomeTemplate(template);
+ await fs.mkdir(root,{recursive:true});
+ const home=path.join(root,'home-'+randomBytes(8).toString('hex'));
+ // A copy that stopped halfway already holds part of the login, so it is removed before the error is reported.
+ try{await fs.cp(template,home,{recursive:true,errorOnExist:true});}catch(error){await fs.rm(home,{recursive:true,force:true});throw error;}
+ return {home,listed};
+}
+// An agent can take permissions away from what it wrote. Links are neither followed nor changed.
+function reclaim(root){
+ const pending=[root];
+ while(pending.length){const dir=pending.pop();
+  try{const info=fsSync.lstatSync(dir);if(!info.isDirectory())continue;fsSync.chmodSync(dir,(info.mode&0o7777)|0o700);
+   for(const entry of fsSync.readdirSync(dir,{withFileTypes:true}))if(entry.isDirectory())pending.push(path.join(dir,entry.name));
+  }catch{}
+ }
+}
+// Removes a used home with everything in it, the copied login included. Returns the login files the agent's
+// client changed: a real token refresh among them can make later sign-ins fail, which then shows as an outage.
+export async function closeHome(home,listed){
+ reclaim(home);const changed=[];
+ for(const [name,hash] of Object.entries(listed)){
+  let same=false;
+  try{
+   // Every step must be a real folder and the last a real file: a link the agent left is never followed.
+   let current=home,real=true;const parts=name.split('/');
+   for(const [i,part] of parts.entries()){current=path.join(current,part);const info=fsSync.lstatSync(current);if(i<parts.length-1?!info.isDirectory():!info.isFile()||info.size>HOME_LIMITS.bytes){real=false;break;}}
+   same=real&&sha256(fsSync.readFileSync(current))===hash;
+  }catch{}
+  if(!same)changed.push(name);
+ }
+ await fs.rm(home,{recursive:true,force:true});
+ return changed;
+}
+// Homes a stopped runner left behind each hold a copy of the login, so none is kept. One that a sandbox still
+// uses means an engine of the earlier run is alive: that has to be stopped by hand before anything else runs.
+export async function clearStaleHomes(root,{gone=sandboxGone}={}){
+ let entries=[];try{entries=fsSync.readdirSync(root,{withFileTypes:true});}catch{}
+ const stale=entries.filter(e=>e.isDirectory()&&HOME_FOLDER.test(e.name)).map(e=>path.join(root,e.name));
+ for(const home of stale){
+  if(!await gone(home,{tries:8}))throw Error(`An engine of an earlier run is still using ${home}. Stop it, then run the same command again.`);
+  reclaim(home);await fs.rm(home,{recursive:true,force:true});
+ }
+ return stale.length;
+}
+
 // archive: where a finished work folder is moved, outside the arena, so that no review can read another one's
 // folder (a second arm reviewing the same case would otherwise sit next to the first one's verdict).
-export async function runAgentUnit({arm,dossier,arena,settings,minutes,archive=null,launch=launchProcess,locate=()=>resolveALA(appRoot,{}),extractPdf=extractWithDeepProof}){
+export async function runAgentUnit({arm,dossier,arena,settings,minutes,home=null,archive=null,launch=launchProcess,locate=()=>resolveALA(appRoot,{}),extractPdf=extractWithDeepProof}){
  const ala=locate();if(!ala.found)return notStarted('engine_missing',alaUnavailable);
  const {workDir,staged}=await stageDossier(dossier,arena);let outcome;
- try{outcome=await reviewInFolder({arm,dossier,settings,minutes,launch,extractPdf,ala,workDir,staged});return outcome;}
+ try{outcome=await reviewInFolder({arm,dossier,settings,minutes,home,launch,extractPdf,ala,workDir,staged});return outcome;}
  // A review that finished keeps its outcome even when its folder cannot be moved; the runner then stops (run.mjs).
  finally{if(archive){try{const kept=await moveFolder(workDir,archive);if(outcome?.details)outcome.details.workDir=kept;}catch(error){if(outcome)outcome.details={...(outcome.details||{}),archiveError:error.message};}}}
 }
-async function reviewInFolder({arm,dossier,settings,minutes,launch,extractPdf,ala,workDir,staged}){
+async function reviewInFolder({arm,dossier,settings,minutes,home,launch,extractPdf,ala,workDir,staged}){
  const {roles}=dossier,extracted=[];
  if(arm.pdfText!==false)for(const pdf of roles.evidence.filter(name=>/\.pdf$/i.test(name))){
   try{const text=await extractPdf(dossier.files[pdf],pdf),name=pdf+'.extracted.md';await fs.writeFile(path.join(workDir,name),text);staged[name]=sha256(text);extracted.push({pdf,text:name});}
@@ -228,7 +316,9 @@ async function reviewInFolder({arm,dossier,settings,minutes,launch,extractPdf,al
  const task=path.join(workDir,'task.txt');
  await fs.writeFile(task,agentTask({request:dossier.files[roles.request].toString('utf8'),promptText:arm.promptText,minutes,extracted}));
  await fs.writeFile(path.join(workDir,'config.json'),JSON.stringify({codingAgent:settings.agent,models:settings.models||{},efforts:settings.efforts||{}}));
- const started=Date.now(),run=await launch({args:alaArguments({entry:ala.entry,settings,dir:workDir,task,attempt:1,kind:'review'}),cwd:workDir,timeoutMs:minutes*60000});
+ // With a home, ALA binds it as the whole sandbox home and does not mount the user's own agent state.
+ const args=[...alaArguments({entry:ala.entry,settings,dir:workDir,task,attempt:1,kind:'review'}),...(home?['--home',home]:[])];
+ const started=Date.now(),run=await launch({args,cwd:workDir,timeoutMs:minutes*60000});
  const inputsModified=[];
  for(const [name,hash] of Object.entries(staged)){let now=null;try{now=sha256(await fs.readFile(path.join(workDir,name)));}catch{}if(now!==hash)inputsModified.push(name);}
  const details={workDir,extracted,inputsModified,exitCode:run.code??null,timeLimited:!!run.timedOut,engineMs:Date.now()-started};
@@ -280,7 +370,11 @@ export async function startDeepProof({dataDir,settings}){
  const client=deepProofClient(`http://127.0.0.1:${server.address().port}`);
  const running=()=>db.prepare("SELECT COUNT(*) AS n FROM runs WHERE status='running'").get().n;
  // Stop any engine first and let its job settle, so nothing writes to the database after it is closed.
- const stop=async()=>{stopEngines();for(let i=0;i<100&&running();i++)await sleep(100);server.closeAllConnections();await new Promise(resolve=>server.close(resolve));db.close();};
+ // A check the runner gave up on keeps running inside this instance and would start its next turn with whatever
+ // home the process has by then. Stopping its engine makes that job fail; this repeats until no run is left.
+ const settle=async({tries=300}={})=>{for(let i=0;i<tries&&running();i++){stopEngines();await sleep(100);}return !running();};
+ // Let every job settle first, so nothing writes to the database after it is closed. Returns whether they did.
+ const stop=async()=>{const settled=await settle();server.closeAllConnections();await new Promise(resolve=>server.close(resolve));db.close();return settled;};
  try{
   if(!await client.login())throw Error('Could not sign in to the private Deep Proof instance in the output folder. Use a new output folder.');
   if(settings?.agent){
@@ -288,7 +382,7 @@ export async function startDeepProof({dataDir,settings}){
    if(saved.status!==200)throw Error(`Deep Proof did not accept the agent and model: ${saved.data?.error||saved.status}`);
   }
   const current=(await client.get('/admin/settings')).data;
-  return {client,stop,stopEngines,settings:{agent:current.agent,model:current.model,effort:current.effort}};
+  return {client,stop,settle,stopEngines,settings:{agent:current.agent,model:current.model,effort:current.effort}};
  }catch(error){await stop();throw error;}
 }
 async function retrying(send,busy,{tries=30,waitMs=2000}={}){
@@ -351,20 +445,45 @@ export const interruptedRecord=record=>({...record,status:'error',reason:'interr
 // previous is the unit's last record under the same fingerprint, so attempts are counted across invocations.
 export async function runUnit(unit,context,previous=null){
  const arm=context.arms[unit.arm],startedAt=new Date().toISOString(),started=Date.now();
- let outcome,dossierSha=null;
+ let outcome,dossierSha=null,opened=null,instance=null,loginChanged=null,cleanupError=null;
  try{
   if(arm.kind==='constant')outcome={status:'completed',prediction:{verdict:arm.verdict,quotes:[]}};
   else{
    let dossier=null;
    try{dossier=await readDossier(path.join(context.dossiers,unit.caseId));dossierSha=dossier.hash;}catch(error){outcome=notStarted('dossier',error.message);}
    if(dossier&&context.dossierHashes&&context.dossierHashes[unit.caseId]!==dossier.hash){outcome=notStarted('dossier','The dossier changed since this campaign started.');dossier=null;}
-   if(dossier&&arm.kind==='agent')outcome=await runAgentUnit({arm,dossier,arena:context.arena,settings:context.settings,minutes:context.minutes,...context.agentOptions});
-   else if(dossier){
-    let deepProof=null;try{deepProof=await context.deepProof();}catch(error){outcome=notStarted('instance',error.message);}
-    if(deepProof)outcome=await runCheckUnit({arm,dossier,deepProof,minutes:context.minutes,label:unit.caseId,...context.checkOptions});
+   // Both arms get their home the same way. HOME points at it while the review runs, because Deep Proof hands ALA
+   // the home of the process it runs in. Afterwards HOME goes back to what the campaign set (run.mjs: an empty
+   // folder, never the user's own home).
+   const homeBefore=process.env.HOME;
+   if(dossier&&context.agentHome){try{opened=await openHome(context.agentHome,context.homes);}catch(error){outcome=notStarted('agent_home',error.message);dossier=null;}}
+   try{
+    if(opened)process.env.HOME=opened.home;
+    if(dossier&&arm.kind==='agent')outcome=await runAgentUnit({arm,dossier,arena:context.arena,settings:context.settings,minutes:context.minutes,home:opened?.home??null,...context.agentOptions});
+    else if(dossier){
+     try{instance=await context.deepProof();}catch(error){outcome=notStarted('instance',error.message);}
+     if(instance)outcome=await runCheckUnit({arm,dossier,deepProof:instance,minutes:context.minutes,label:unit.caseId,...context.checkOptions});
+    }
+   }finally{
+    // The order matters. A check that was given up (an unreadable status, an overrun, an exception) is still
+    // running inside the instance and would start its next turn with whatever HOME is by then. So first no check
+    // may be left running, then no sandbox may be left on this home, and only then does HOME change and the home go.
+    try{
+     if(instance?.settle&&!await instance.settle())cleanupError='Deep Proof still had a check running after its review ended, and its engine could not be stopped.';
+     else if(opened&&!await (context.sandboxGone??sandboxGone)(opened.home))cleanupError='A sandbox that uses the home of this review was still running.';
+    }catch(error){cleanupError=error.message;}
+    // After a failed clean-up HOME stays on this review's own home, which is kept: whatever is still running then
+    // reaches nothing else. The run stops, and run.mjs restores HOME once the instance has settled.
+    if(opened&&!cleanupError){
+     if(homeBefore===undefined)delete process.env.HOME;else process.env.HOME=homeBefore;
+     try{loginChanged=await closeHome(opened.home,opened.listed);}catch(error){cleanupError=`The agent home of this review could not be removed: ${error.message}`;}
+    }
    }
   }
  }catch(error){outcome={status:'error',reason:'runner',detail:error.message};}
+ // A review keeps its outcome when the clean-up after it failed; the runner then stops (run.mjs), because the next
+ // review would not be alone.
+ if(opened||cleanupError)outcome.details={...(outcome.details||{}),...(opened?{privateHome:true,loginChanged}:{}),...(cleanupError?{cleanupError}:{})};
  const {attempted=true,...rest}=outcome,before=counted(previous,arm);
  return {schemaVersion:1,unit:unit.unit,arm:arm.id,armFingerprint:arm.fingerprint,caseId:unit.caseId,repeat:unit.repeat,dossierSha,startedAt,durationMs:Date.now()-started,
   attempt:(before?.attempt??0)+(attempted?1:0),errorAttempts:(before?.errorAttempts??0)+(rest.status==='error'&&attempted?1:0),...rest,...(rest.status==='error'?{attempted}:{})};
@@ -415,7 +534,7 @@ export async function collect(out,{predictions=path.join(out,'predictions'),flag
  const campaign=JSON.parse(await fs.readFile(path.join(out,'campaign.json'),'utf8')),records=await readRecords(out);
  let history=[];try{history=(await fs.readFile(path.join(out,'attempts.jsonl'),'utf8')).split('\n').filter(Boolean).map(line=>JSON.parse(line));}catch{}
  await fs.mkdir(predictions,{recursive:true});
- const index={schemaVersion:1,setup:{agent:campaign.agent,model:campaign.model,effort:campaign.effort,minutes:campaign.minutes,repeats:campaign.repeats,seed:campaign.seed},blind:campaign.blind,flagCategoriesOverride:flagCategories,cases:campaign.cases,arms:{},incomplete:[],waitingForDecision:[]};
+ const index={schemaVersion:1,setup:{agent:campaign.agent,model:campaign.model,effort:campaign.effort,minutes:campaign.minutes,repeats:campaign.repeats,seed:campaign.seed},blind:campaign.blind,agentState:campaign.agentState??null,flagCategoriesOverride:flagCategories,cases:campaign.cases,arms:{},incomplete:[],waitingForDecision:[]};
  for(const [armId,arm] of Object.entries(campaign.arms)){
   const decisions=(campaign.operatorDecisions||[]).filter(d=>d.arm===armId),past=history.filter(r=>r.arm===armId&&r.armFingerprint===arm.fingerprint),starts=[];
   const summary={kind:arm.kind,fingerprint:arm.fingerprint,repeats:[],completed:0,failed:0,suspectFailures:0,failureReasons:{},

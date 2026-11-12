@@ -17,6 +17,7 @@ const points=d=>d.value==null?'n/a':`${d.value>=0?'+':''}${(d.value*100).toFixed
 export function warnings(index,baseline,candidate,{partition='final',incomplete=0}={}){
  const notes=[],a=index.arms[baseline],b=index.arms[candidate],add=(text,exploratory=false)=>notes.push({text,exploratory});
  if(index.blind?.status!=='isolated_as_attested')add('Answer keys were readable from the folders used in this campaign.',true);
+ if((a.kind!=='constant'||b.kind!=='constant')&&index.agentState!=='private_home_per_review')add('Reviews did not each get a private agent home. A review could read what earlier sessions of the coding agent left, and Check Report could read the whole home folder of the user who ran the campaign.',true);
  if(incomplete)add(`${incomplete} case(s) were left out because a review is missing for one of the arms. Cases that are hard to finish are the ones most likely to be missing.`,true);
  if(partition!=='final')add(`This reading is ${partition?`on the ${partition} partition`:'not restricted to the final partition'}. Development and calibration cases may have been used to tune prompts.`,true);
  if(index.flagCategoriesOverride)add(`Check Report verdicts were recomputed with the category rule ${JSON.stringify(index.flagCategoriesOverride)}, not the rule frozen in the arm. This is a sensitivity analysis.`,true);

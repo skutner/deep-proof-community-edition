@@ -7,8 +7,9 @@ import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {score} from './evaluation/benchmarks/lib.mjs';
-import {loadArms,planUnits,blindness,dossierRoles,readDossier,stageDossier,parsePrediction,runAgentUnit,launchProcess,stopEngines,recordFindings,flagFromFindings,runCheckUnit,startDeepProof,collect,unitId,MAX_ERROR_ATTEMPTS} from './evaluation/benchmarks/runner.mjs';
-import {main,parseArgs,codeHash,processStart,acquireLock,lockNamespace} from './evaluation/benchmarks/run.mjs';
+import {loadArms,planUnits,blindness,dossierRoles,readDossier,stageDossier,parsePrediction,runAgentUnit,launchProcess,stopEngines,recordFindings,flagFromFindings,runCheckUnit,startDeepProof,collect,unitId,MAX_ERROR_ATTEMPTS,checkHomeTemplate,openHome,closeHome,homesRoot,HOME_LIMITS} from './evaluation/benchmarks/runner.mjs';
+import {main,parseArgs,codeHash,processStart,acquireLock,lockNamespace,agentOnPath} from './evaluation/benchmarks/run.mjs';
+import {clearStaleHomes,sandboxGone} from './evaluation/benchmarks/runner.mjs';
 import {compareArms,mcnemarExact,mulberry32} from './evaluation/benchmarks/stats.mjs';
 import {warnings} from './evaluation/benchmarks/compare.mjs';
 
@@ -283,6 +284,7 @@ test('against a real private Deep Proof instance without ALA, the check is prepa
  const root=await temp(t),dir=await dossier(path.join(root,'dossiers'),'case-000000000001'),arm=(await loadArms())['deep-proof-check'];
  const deepProof=await startDeepProof({dataDir:path.join(root,'out','deep-proof-data')});t.after(()=>deepProof.stop());
  assert.equal(typeof deepProof.settings.agent,'string');
+ assert.equal(await deepProof.settle(),true,'with no check running there is nothing to stop');
  const outcome=await runCheckUnit({arm,dossier:await readDossier(dir),deepProof,minutes:35,label:'case-000000000001',pollMs:1,retry:{tries:1,waitMs:1}});
  assert.deepEqual([...state(outcome),outcome.attempted],['error','engine_missing',false]);assert.match(outcome.detail,/ALA was not found/);
  const route=`/projects/${outcome.details.projectId}`;
@@ -300,7 +302,7 @@ test('a campaign plans without running, freezes its inputs, and only an operator
  const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),arena=path.join(root,'arena'),lines=[];
  for(const id of ['case-000000000001','case-000000000002','case-000000000003'])await dossier(dossiers,id);
  await fs.writeFile(path.join(root,'host','cases.json'),JSON.stringify({cases:[{caseId:'case-000000000001',dataset:'ragtruth',partition:'final'},{caseId:'case-000000000002',dataset:'ragtruth',partition:'final'},{caseId:'case-000000000003',dataset:'faithbench',partition:'development'}]}));
- const base=['--dossiers',dossiers,'--out',out,'--arena',arena,'--partition','final','--repeats','2','--minutes','10','--agent','codex','--model','test-codex-model'];
+ const base=['--dossiers',dossiers,'--out',out,'--arena',arena,'--partition','final','--repeats','2','--minutes','10','--agent','codex','--model','test-codex-model','--shared-agent-state'];
  const log=line=>lines.push(line);
  const planned=await main([...base,'--arms','always-problem,plain'],{log});
  assert.equal(planned.pending.length,8);assert.match(lines.join('\n'),/Nothing was run/);assert.match(lines.join('\n'),/Agent runs to start: 4, each up to 10 minutes with codex \/ test-codex-model: at most 0\.7 hours/);
@@ -384,7 +386,7 @@ test('a campaign plans without running, freezes its inputs, and only an operator
 test('a unit that keeps ending in an error stops being retried and waits for a decision',async t=>{
  const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),lines=[],log=line=>lines.push(line);
  await dossier(dossiers,'case-000000000001');
- const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--launch'];
+ const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--shared-agent-state','--launch'];
  let launches=0;const broken={agentOptions:{locate:found,launch:async()=>{launches++;throw Error('the runner lost its connection');}}};
  for(let attempt=1;attempt<=MAX_ERROR_ATTEMPTS;attempt++){
   const result=await main(command,{log,context:broken});
@@ -401,7 +403,7 @@ test('a unit that keeps ending in an error stops being retried and waits for a d
 test('a run cut short leaves a trace and counts as an attempt, and a campaign has one runner at a time',async t=>{
  const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),arena=path.join(root,'arena'),log=()=>{};
  await dossier(dossiers,'case-000000000001');
- const command=['--dossiers',dossiers,'--out',out,'--arena',arena,'--agent','codex','--model','test-codex-model','--arms','plain','--launch'];
+ const command=['--dossiers',dossiers,'--out',out,'--arena',arena,'--agent','codex','--model','test-codex-model','--arms','plain','--shared-agent-state','--launch'];
  // A separate process runs the campaign and dies in the middle of the review, as after a crash or a kill.
  const script=`import {main} from ${JSON.stringify(new URL('./evaluation/benchmarks/run.mjs',import.meta.url).href)};await main(${JSON.stringify(command)},{log(){},context:{agentOptions:{locate:()=>({found:true,entry:'/opt/ala/bin/ala.mjs',root:'/opt/ala'}),launch:async()=>process.exit(7)}}});`;
  const crashed=spawnSync(process.execPath,['--input-type=module','-e',script],{encoding:'utf8'});
@@ -468,7 +470,7 @@ test('the campaign lock is refreshed by its holder, and a runner that lost it st
  await fs.rm(file);
  // In a campaign: the lock is lost during the first review, so the second one is not started.
  const dossiers=path.join(root,'host','dossiers'),lines=[];await dossier(dossiers,'case-000000000001');
- const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--repeats','2','--launch'];
+ const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--repeats','2','--shared-agent-state','--launch'];
  let launches=0;
  const result=await main(command,{log:line=>lines.push(line),context:{agentOptions:{locate:found,launch:async({cwd})=>{launches++;writeFileSync(file,JSON.stringify({...theirs,at:new Date().toISOString()}));await fs.writeFile(path.join(cwd,'prediction.json'),'{"verdict":"problem"}');return {code:0};}}}});
  assert.deepEqual([launches,result.stopped,result.index.arms.plain.completed,result.index.incomplete.length],[1,true,1,1]);
@@ -478,7 +480,7 @@ test('the campaign lock is refreshed by its holder, and a runner that lost it st
 test('when a finished work folder cannot leave the arena, the review is kept and the run stops',async t=>{
  const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),lines=[];
  await dossier(dossiers,'case-000000000001');await fs.writeFile(path.join(root,'not-a-folder'),'x');
- const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--repeats','2','--launch'];
+ const command=['--dossiers',dossiers,'--out',out,'--arena',path.join(root,'arena'),'--agent','codex','--model','test-codex-model','--arms','plain','--repeats','2','--shared-agent-state','--launch'];
  const result=await main(command,{log:line=>lines.push(line),context:{agentOptions:{archive:path.join(root,'not-a-folder'),locate:found,launch:writes('prediction.json','{"verdict":"problem"}')}}});
  assert.deepEqual([result.stopped,result.index.arms.plain.completed,result.index.arms.plain.errorsRecorded,result.index.incomplete.length],[true,1,0,1]);
  assert.match(lines.join('\n'),/Stopped: the work folder of plain__case-000000000001__r\d could not be moved out of the arena/);
@@ -576,7 +578,7 @@ test('exact McNemar values and the seeded generator are stable',()=>{
 
 test('a comparison states what weakens it, and says when it is only exploratory',()=>{
  const arm=(first,last,more={})=>({kind:'agent',firstStartedAt:first,lastStartedAt:last,meanStartedAt:new Date((Date.parse(first)+Date.parse(last))/2).toISOString(),rerunsGranted:0,markedFailed:0,suspectFailures:0,interruptedUnits:0,...more});
- const sound={setup:{repeats:3},blind:{status:'isolated_as_attested'},flagCategoriesOverride:null,arms:{plain:arm('2026-01-01T00:00:00Z','2026-01-02T00:00:00Z'),check:arm('2026-01-01T01:00:00Z','2026-01-02T01:00:00Z',{kind:'check'})}};
+ const sound={setup:{repeats:3},blind:{status:'isolated_as_attested'},agentState:'private_home_per_review',flagCategoriesOverride:null,arms:{plain:arm('2026-01-01T00:00:00Z','2026-01-02T00:00:00Z'),check:arm('2026-01-01T01:00:00Z','2026-01-02T01:00:00Z',{kind:'check'})}};
  assert.deepEqual(warnings(sound,'plain','check'),[]);
  const texts=(index,options)=>warnings(index,'plain','check',options).map(n=>`${n.exploratory?'[exploratory] ':''}${n.text}`).join('\n');
  assert.match(texts(sound,{partition:null}),/\[exploratory\] This reading is not restricted to the final partition/);
@@ -617,4 +619,187 @@ test('the scripts run end to end on a hand-authored campaign with constant arms'
  assert.deepEqual([saved.baselineArm,saved.candidateArm,saved.cases.problem,saved.cases.clean,saved.exploratory],['always-clear','always-problem',2,2,true]);
  const missingArm=node('compare.mjs','--gold',gold,'--predictions',path.join(out,'predictions'),'--baseline','plain','--candidate','always-problem');
  assert.equal(missingArm.status,1);assert.match(missingArm.stderr,/Arm "plain" is not in this campaign/);
+});
+
+// ---------- a private agent home for each review ----------
+const LOGIN='{"token":"made-up-login"}\n';
+async function loginTemplate(root){const home=path.join(root,'agent-home');await fs.mkdir(path.join(home,'.codex'),{recursive:true});await fs.writeFile(path.join(home,'.codex','auth.json'),LOGIN);return home;}
+const filesUnder=async dir=>(await fs.readdir(dir,{recursive:true,withFileTypes:true})).filter(e=>e.isFile()).map(e=>path.relative(dir,path.join(e.parentPath??e.path,e.name)).split(path.sep).join('/')).sort();
+
+test('every review of a campaign gets a private agent home, and nothing it writes there reaches another review',async t=>{
+ const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),arena=path.join(root,'arena'),lines=[],seen=[],between=[];
+ for(const id of ['case-000000000001','case-000000000002'])await dossier(dossiers,id);
+ const template=await loginTemplate(root),ownHome=process.env.HOME,ownUserSite=process.env.PYTHONNOUSERSITE,planted=[];
+ const launch=async({args,cwd})=>{
+  const home=args[args.indexOf('--home')+1];
+  seen.push({home,env:process.env.HOME,noUserSite:process.env.PYTHONNOUSERSITE,files:await filesUnder(home),login:readFileSync(path.join(home,'.codex','auth.json'),'utf8')});
+  // Start-up code an agent plants for Python in its home must not run when Deep Proof replays a numeric check on this machine.
+  const site=spawnSync('python3',['-c','import site;print(site.getusersitepackages())'],{encoding:'utf8',env:{...process.env,PYTHONNOUSERSITE:''}});
+  if(site.status===0&&site.stdout.trim().startsWith(home)){
+   const folder=site.stdout.trim(),mark=name=>path.join(root,name);
+   await fs.mkdir(folder,{recursive:true});await fs.writeFile(path.join(folder,'planted.pth'),'import os; open(os.environ["PLANTED_MARK"],"w").write("ran")\n');
+   spawnSync('python3',['-c','pass'],{env:{...process.env,PLANTED_MARK:mark('ran-as-the-runner-would')}});
+   spawnSync('python3',['-c','pass'],{env:{...process.env,PYTHONNOUSERSITE:'',PLANTED_MARK:mark('ran-without-the-guard')}});
+   planted.push([existsSync(mark('ran-as-the-runner-would')),existsSync(mark('ran-without-the-guard'))]);
+   await fs.rm(mark('ran-without-the-guard'),{force:true});await fs.rm(folder,{recursive:true});await fs.rm(path.join(home,'.local'),{recursive:true,force:true}).catch(()=>{});
+  }
+  // What a client and an agent may leave: session history, and a note for the next review in the one file a client rewrites.
+  await fs.mkdir(path.join(home,'.codex','sessions'));await fs.writeFile(path.join(home,'.codex','sessions','history.jsonl'),'what I concluded\n');
+  await fs.writeFile(path.join(home,'.codex','auth.json'),'{"token":"x","note":"case 1 has a problem in sentence 2"}\n');
+  await fs.chmod(path.join(home,'.codex','sessions'),0o000);
+  await fs.writeFile(path.join(cwd,'prediction.json'),'{"verdict":"problem","quotes":[]}');return {code:0};
+ };
+ const command=['--dossiers',dossiers,'--out',out,'--arena',arena,'--agent','codex','--model','test-codex-model','--arms','plain','--agent-home',template,'--launch'];
+ const done=await main(command,{log:line=>{lines.push(line);between.push(process.env.HOME);},context:{agentOnPath:()=>true,agentOptions:{locate:found,launch}}});
+ assert.equal(done.index.arms.plain.completed,2);assert.equal(seen.length,2);
+ for(const call of seen){
+  assert.match(path.basename(call.home),/^home-[0-9a-f]{16}$/);assert.equal(path.dirname(call.home),path.join(out,'agent-homes'),'homes live in one folder of the campaign');
+  assert.equal(call.env,call.home,'HOME points at the private home while the review runs');assert.equal(call.noUserSite,'1');
+  assert.deepEqual(call.files,['.codex/auth.json'],'a review starts with the login and nothing else');assert.equal(call.login,LOGIN,'every review starts from the same login');
+ }
+ assert.notEqual(seen[0].home,seen[1].home);
+ assert.deepEqual(await fs.readdir(path.join(out,'agent-homes')),[],'no home survives its review, and the parking folder is removed');
+ assert.deepEqual(await fs.readdir(arena),[],'nothing of a home is ever in the arena');
+ assert.equal(readFileSync(path.join(template,'.codex','auth.json'),'utf8'),LOGIN,'nothing is copied back to the template');
+ assert.equal(process.env.HOME,ownHome,'the runner gets its own home back at the end');assert.equal(process.env.PYTHONNOUSERSITE,ownUserSite);
+ // Between reviews HOME is an empty parking folder of the campaign, never the user's own home.
+ const parked=between.filter(home=>home!==ownHome&&!/home-[0-9a-f]{16}$/.test(home));
+ assert.ok(parked.length&&parked.every(home=>home===path.join(out,'agent-homes','no-home')),between.join(' '));
+ // Where python3 exists: the planted start-up code ran only in the control without the guard.
+ for(const [guarded,control] of planted)assert.deepEqual([guarded,control],[false,true]);
+ for(const file of await fs.readdir(path.join(out,'records'))){const record=JSON.parse(await fs.readFile(path.join(out,'records',file),'utf8'));assert.equal(record.details.privateHome,true);assert.deepEqual(record.details.loginChanged,['.codex/auth.json']);}
+ assert.equal(done.campaign.agentState,'private_home_per_review');assert.equal(done.index.agentState,'private_home_per_review');
+ assert.match(lines.join('\n'),/Agent state: a private home for each review/);
+ // One invocation with shared state marks the campaign for good.
+ const shared=await main([...command.filter(word=>word!=='--agent-home'&&word!==template),'--shared-agent-state'],{log:()=>{},context:{agentOptions:{locate:found,launch}}});
+ assert.equal(shared.campaign.agentState,'shared_with_other_sessions');
+ const back=await main(command,{log:()=>{},context:{agentOnPath:()=>true,agentOptions:{locate:found,launch}}});
+ assert.equal(back.campaign.agentState,'shared_with_other_sessions');assert.equal(back.index.agentState,'shared_with_other_sessions');
+});
+
+test('Check Report runs with the private home too, because Deep Proof hands ALA the home of its own process',async t=>{
+ const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),homes=[];
+ await dossier(dossiers,'case-000000000001');
+ const template=await loginTemplate(root),ownHome=process.env.HOME,engine=standIn({run:{status:'failed',failure:{code:'timeout'}}});
+ // The stand-in instance notes the home Deep Proof would pass to ALA (os.homedir()) when the check starts and while it runs.
+ const post=engine.client.post,get=engine.client.get;
+ engine.client.post=async(route,body)=>{if(route.endsWith('/analyses'))homes.push(os.homedir());return post(route,body);};
+ engine.client.get=async route=>{homes.push(os.homedir());return get(route);};
+ // A home left by a stopped runner, with a link in it as an agent might leave one.
+ const stray=path.join(homesRoot(out),'home-0123456789abcdef');await fs.mkdir(path.join(stray,'.local','bin'),{recursive:true});await fs.writeFile(path.join(stray,'auth.json'),'left by a stopped runner');
+ await fs.symlink(root,path.join(stray,'.local','bin','tool'));
+ // The stand-in instance also says when it was asked to settle: that has to happen while HOME is still the review's home.
+ const settledWith=[];engine.settle=async()=>{settledWith.push([process.env.HOME,existsSync(process.env.HOME)]);return true;};
+ const lines=[];
+ const done=await main(['--dossiers',dossiers,'--out',out,'--agent','codex','--model','test-codex-model','--arms','deep-proof-check','--agent-home',template,'--launch'],
+  {log:line=>lines.push(line),context:{agentOnPath:()=>true,deepProof:async()=>engine,checkOptions:{pollMs:1}}});
+ assert.deepEqual([done.index.arms['deep-proof-check'].failed,done.index.arms['deep-proof-check'].failureReasons.timeout],[1,1]);
+ assert.ok(homes.length>=2);
+ for(const home of homes){assert.match(path.basename(home),/^home-[0-9a-f]{16}$/);assert.equal(path.dirname(home),homesRoot(out));assert.notEqual(home,ownHome);}
+ assert.equal(new Set(homes).size,1);assert.ok(!existsSync(homes[0]));assert.ok(!existsSync(stray),'a home left by a stopped runner is removed before any review');
+ assert.deepEqual(settledWith,[[homes[0],true]],'the instance settles while HOME is the home of the review and the home still exists');
+ assert.match(lines.join('\n'),/Removed 1 agent home\(s\) left by an interrupted run/);assert.equal(done.campaign.blind.status,'isolated_as_attested','a leftover home does not make the campaign exposed');
+ assert.equal(process.env.HOME,ownHome);assert.equal(os.homedir(),ownHome);
+});
+
+test('a check the runner gives up on is stopped before the next review, and a failed clean-up stops the run',async t=>{
+ const root=await temp(t),dossiers=path.join(root,'host','dossiers'),arena=path.join(root,'arena');
+ for(const id of ['case-000000000001','case-000000000002'])await dossier(dossiers,id);
+ const template=await loginTemplate(root),ownHome=process.env.HOME;
+ const command=(out,arms,...more)=>['--dossiers',dossiers,'--out',out,'--arena',arena,'--agent','codex','--model','test-codex-model','--arms',arms,'--agent-home',template,'--launch',...more];
+ // 1. The status of a running check cannot be read. The review ends in an error, and the check is stopped while
+ // HOME is still its own home; only then does the next review start.
+ const out=path.join(root,'out-1'),order=[],engine=standIn({alwaysRunning:true});
+ const get=engine.client.get;engine.client.get=async route=>route.includes('/analyses/')?{status:500,data:{error:'The operation could not be completed.'}}:get(route);
+ const post=engine.client.post;engine.client.post=async(route,body)=>{if(route.endsWith('/analyses'))order.push(['check starts',path.basename(os.homedir())]);return post(route,body);};
+ engine.settle=async()=>{order.push(['settle',path.basename(process.env.HOME)]);return true;};
+ const first=await main(command(out,'deep-proof-check'),{log:()=>{},context:{agentOnPath:()=>true,deepProof:async()=>engine,checkOptions:{pollMs:1}}});
+ assert.equal(first.index.arms['deep-proof-check'].errorsRecorded,2);
+ assert.equal(order.length,4);
+ for(const pair of [0,2]){assert.equal(order[pair][0],'check starts');assert.deepEqual(order[pair+1],['settle',order[pair][1]],'settled with the home of the review that was given up');}
+ assert.notEqual(order[0][1],order[2][1]);assert.deepEqual(await fs.readdir(path.join(out,'agent-homes')),[]);
+ // An exception while the check runs takes the same path.
+ const out2=path.join(root,'out-2'),thrown=standIn({alwaysRunning:true}),settles=[];
+ thrown.client.get=async()=>{throw Error('fetch failed');};thrown.settle=async()=>{settles.push(path.basename(process.env.HOME));return true;};
+ const second=await main(command(out2,'deep-proof-check'),{log:()=>{},context:{agentOnPath:()=>true,deepProof:async()=>thrown,checkOptions:{pollMs:1}}});
+ assert.equal(second.index.arms['deep-proof-check'].errorsRecorded,2);assert.equal(settles.length,2);assert.ok(settles.every(name=>/^home-[0-9a-f]{16}$/.test(name)));
+ // 2. The check cannot be stopped. The review keeps its outcome, the run stops, and the home stays for the engine that still uses it.
+ const out3=path.join(root,'out-3'),stuck=standIn({run:{status:'failed',failure:{code:'timeout'}}}),lines=[];stuck.settle=async()=>false;
+ const third=await main(command(out3,'deep-proof-check'),{log:line=>lines.push(line),context:{agentOnPath:()=>true,deepProof:async()=>stuck,checkOptions:{pollMs:1}}});
+ assert.equal(third.stopped,true);assert.match(lines.join('\n'),/Stopped: after deep-proof-check__case-\d+__r1, Deep Proof still had a check running/);
+ assert.deepEqual([third.index.arms['deep-proof-check'].failed,third.index.incomplete.length],[1,1]);
+ const left=(await fs.readdir(path.join(out3,'agent-homes'))).filter(name=>name.startsWith('home-'));assert.equal(left.length,1,'the home is not removed under an engine that may still use it');
+ assert.equal(process.env.HOME,ownHome);
+ // The next command first makes sure nothing uses that home any more. While something does, it refuses to start.
+ await assert.rejects(main(command(out3,'deep-proof-check'),{log:()=>{},context:{agentOnPath:()=>true,deepProof:async()=>stuck,staleHomes:{gone:async()=>false}}}),/An engine of an earlier run is still using/);
+ assert.equal((await fs.readdir(path.join(out3,'agent-homes'))).filter(name=>name.startsWith('home-')).length,1);
+ // Leftover homes go even when the campaign is continued with shared agent state.
+ const resumed=[];stuck.settle=async()=>true;
+ await main([...command(out3,'deep-proof-check').filter(word=>word!=='--agent-home'&&word!==template),'--shared-agent-state'],{log:line=>resumed.push(line),context:{deepProof:async()=>stuck,checkOptions:{pollMs:1}}});
+ assert.match(resumed.join('\n'),/Removed 1 agent home\(s\)/);assert.deepEqual((await fs.readdir(path.join(out3,'agent-homes'))).filter(name=>name.startsWith('home-')),[]);
+ // 3. The plain agent: a sandbox that is still on the home after the engine ended stops the run in the same way.
+ const out4=path.join(root,'out-4'),plain=[];
+ const fourth=await main(command(out4,'plain'),{log:line=>plain.push(line),context:{agentOnPath:()=>true,sandboxGone:async()=>false,agentOptions:{locate:found,launch:writes('prediction.json','{"verdict":"problem","quotes":[]}')}}});
+ assert.equal(fourth.stopped,true);assert.equal(fourth.index.arms.plain.completed,1);assert.match(plain.join('\n'),/A sandbox that uses the home of this review was still running/);
+ // sandboxGone itself: a process that names the home on its command line keeps it busy.
+ const busy=path.join(root,'home-busy'),child=spawn(process.execPath,['-e','setTimeout(()=>{},20000)',busy],{stdio:'ignore'});t.after(()=>{try{child.kill('SIGKILL');}catch{}});
+ await wait(300);assert.equal(await sandboxGone(busy,{tries:2,waitMs:50}),false);
+ child.kill('SIGKILL');await wait(300);assert.equal(await sandboxGone(busy,{tries:20,waitMs:50}),true);
+});
+
+test('a campaign does not start without a decision about agent state, and the login folder is checked',async t=>{
+ const root=await temp(t),dossiers=path.join(root,'host','dossiers'),out=path.join(root,'out'),arena=path.join(root,'arena');
+ await dossier(dossiers,'case-000000000001');
+ const template=await loginTemplate(root),never={agentOnPath:()=>true,agentOptions:{locate:found,launch:async()=>{throw Error('must not launch');}}};
+ const command=(...more)=>['--dossiers',dossiers,'--out',out,'--arena',arena,'--agent','codex','--model','test-codex-model','--arms','plain',...more];
+ await assert.rejects(main(command('--launch'),{log:()=>{},context:never}),/Pass --agent-home/);
+ await assert.rejects(main(command('--agent-home',template,'--shared-agent-state','--launch'),{log:()=>{},context:never}),/either --agent-home or --shared-agent-state/);
+ await assert.rejects(main(command('--agent-home',template,'--launch'),{log:()=>{},context:{...never,agentOnPath:()=>false}}),/only on PATH/);
+ // Planning needs no decision yet, and says so.
+ const lines=[];await main(command(),{log:line=>lines.push(line)});assert.match(lines.join('\n'),/Agent state: not chosen yet/);
+ // The login folder must be apart from every campaign folder, hold no link, and look like a login rather than a used home.
+ for(const inside of [path.join(arena,'login'),path.join(out,'login'),path.join(dossiers,'login')]){
+  await fs.mkdir(path.join(inside,'.codex'),{recursive:true});await fs.writeFile(path.join(inside,'.codex','auth.json'),LOGIN);
+  await assert.rejects(main(command('--agent-home',inside,'--launch'),{log:()=>{},context:never}),/--agent-home folder must not contain, or lie inside/);
+  await fs.rm(inside,{recursive:true});
+ }
+ await fs.rm(out,{recursive:true,force:true});await fs.rm(arena,{recursive:true,force:true});
+ assert.throws(()=>checkHomeTemplate(path.join(root,'missing')),/existing folder/);
+ const empty=path.join(root,'empty');await fs.mkdir(empty);assert.throws(()=>checkHomeTemplate(empty),/is empty/);
+ const linked=path.join(root,'linked');await fs.mkdir(linked);await fs.writeFile(path.join(linked,'auth.json'),LOGIN);await fs.symlink(root,path.join(linked,'elsewhere'));
+ assert.throws(()=>checkHomeTemplate(linked),/holds a link/);
+ const used=path.join(root,'used');await fs.mkdir(path.join(used,'sessions'),{recursive:true});
+ for(let i=0;i<=HOME_LIMITS.files;i++)await fs.writeFile(path.join(used,'sessions',`${i}.jsonl`),'x');
+ assert.throws(()=>checkHomeTemplate(used),/only a login/);
+ assert.deepEqual(Object.keys(checkHomeTemplate(template)),['.codex/auth.json']);
+ // The agent is found through its own variable or on PATH, as ALA finds it once the home is private.
+ const bin=path.join(root,'bin');await fs.mkdir(bin);await fs.writeFile(path.join(bin,'codex'),'#!/bin/sh\n',{mode:0o755});
+ assert.equal(agentOnPath('codex',{PATH:bin}),true);assert.equal(agentOnPath('codex',{PATH:root}),false);
+ // A location variable counts only when it leads to a program: a stale one would cost reviews, not an error message.
+ assert.equal(agentOnPath('codex',{PATH:'',CODEX_BIN:path.join(bin,'codex')}),true);assert.equal(agentOnPath('codex',{PATH:'',CODEX_BIN:'/opt/missing/codex'}),false);
+ assert.equal(agentOnPath('codex',{PATH:'',CODEX_BIN:bin}),false,'a folder is not a program');
+});
+
+test('a link left in a private home is never followed when the home is closed',async t=>{
+ const root=await temp(t),template=await loginTemplate(root),outside=path.join(root,'outside');
+ // The file outside equals the login: an implementation that followed the link would call the login unchanged.
+ await fs.mkdir(outside);await fs.writeFile(path.join(outside,'auth.json'),LOGIN);await fs.chmod(outside,0o500);
+ const {home,listed}=await openHome(template,path.join(root,'homes'));
+ assert.deepEqual(await closeHome(home,listed),[],'an untouched login is reported as unchanged');assert.ok(!existsSync(home));
+ const second=await openHome(template,path.join(root,'homes'));
+ await fs.rm(path.join(second.home,'.codex'),{recursive:true});await fs.symlink(outside,path.join(second.home,'.codex'));
+ assert.deepEqual(await closeHome(second.home,second.listed),['.codex/auth.json'],'a login reached through a link is not the login');
+ assert.equal(readFileSync(path.join(outside,'auth.json'),'utf8'),LOGIN,'nothing outside the home is removed');
+ assert.equal((await fs.stat(outside)).mode&0o777,0o500,'permissions outside the home are not touched');
+ await fs.chmod(outside,0o700);      // so the test folder can be removed
+ assert.ok(!existsSync(second.home));assert.equal(readFileSync(path.join(template,'.codex','auth.json'),'utf8'),LOGIN);
+});
+
+test('a comparison of reviews that shared agent state is exploratory',()=>{
+ const arm=kind=>({kind,firstStartedAt:'2026-01-01T00:00:00Z',lastStartedAt:'2026-01-01T01:00:00Z',meanStartedAt:'2026-01-01T00:30:00Z',rerunsGranted:0,markedFailed:0,suspectFailures:0,interruptedUnits:0});
+ const index=agentState=>({setup:{repeats:3},blind:{status:'isolated_as_attested'},agentState,flagCategoriesOverride:null,arms:{plain:arm('agent'),check:arm('check'),floor:arm('constant'),ceiling:arm('constant')}});
+ assert.deepEqual(warnings(index('private_home_per_review'),'plain','check'),[]);
+ // A campaign recorded before homes were private carries no statement, and counts as shared.
+ for(const state of ['shared_with_other_sessions',null,undefined]){const notes=warnings(index(state),'plain','check');assert.equal(notes.length,1);assert.equal(notes[0].exploratory,true);assert.match(notes[0].text,/private agent home[\s\S]*whole home folder/);}
+ assert.ok(warnings(index(null),'floor','ceiling').every(note=>!/private agent home/.test(note.text)),'two constant answers involve no agent');
 });

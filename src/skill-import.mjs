@@ -3,7 +3,7 @@ import {parseCriteria} from './criteria.mjs';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import {executeDocumentTool,MAX_UPLOAD_BYTES} from './documents.mjs';
+import {executeDocumentTool,MAX_UPLOAD_BYTES,removeWorkspace} from './documents.mjs';
 import {readSkillFiles,skillIdentity} from './skill-bundle.mjs';
 import {CERTIFICATE_FILE,parseCertificate} from './verification.mjs';
 const invalid=message=>{throw Object.assign(Error(message),{status:400});};
@@ -14,7 +14,7 @@ export async function importSkillArchive(file,typeId){
  if(imports>=2)throw Object.assign(Error('Two imports are in progress. Please try again shortly.'),{status:429});imports++;
  let temporary;
  try{
-  temporary=await fs.mkdtemp(path.join(os.tmpdir(),'analyst-skill-import-'));const archive=path.join(temporary,'skill.zip'),script=path.join(temporary,'skill-archive.py'),output=path.join(temporary,'unpacked');await fs.writeFile(archive,bytes);await fs.copyFile(new URL('./skill-archive.py',import.meta.url),script);
+  temporary=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'analyst-skill-import-'));const archive=path.join(temporary,'skill.zip'),script=path.join(temporary,'skill-archive.py'),output=path.join(temporary,'unpacked');await fs.writeFile(archive,bytes);await fs.copyFile(new URL('./skill-archive.py',import.meta.url),script);
   try{await executeDocumentTool('python3',[script,archive,output],temporary);}catch{invalid('The ZIP could not be imported. Use a valid Analyst Skill package with readable supporting files. Unsafe or oversized archives cannot be imported.');}
   let files;try{files=readSkillFiles(output);}catch(error){invalid(error.message);}
   const entry=files['SKILL.md'];try{skillIdentity(entry);}catch(error){invalid(error.message);}
@@ -29,5 +29,5 @@ export async function importSkillArchive(file,typeId){
   if(criteria.length>100000||playbook.length>100000)invalid('Review Criteria and Review Playbook must each fit within 100,000 characters.');
   files['references/review-criteria.md']=criteria;files['references/review-playbook.md']=playbook;
   return {files,criteria,playbook};
- }finally{imports--;if(temporary)await fs.rm(temporary,{recursive:true,force:true});}
+ }finally{imports--;if(temporary)await removeWorkspace(temporary);}
 }

@@ -9,7 +9,7 @@ import {typeSkillFolder} from './type-skills.mjs';
 
 // Only input originals enter the disposable agent workspace. It never serves as report storage.
 export async function withQualityWorkspace(folder,input,task){
- const workspace=await fs.mkdtemp(path.join(os.tmpdir(),'deep-proof-verification-'));
+ const workspace=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'deep-proof-verification-'));
  try{
   for(const d of input.documents){for(const ext of [d.file_type,['doc','docx','ppt','pptx'].includes(d.file_type)?'preview.pdf':null].filter(Boolean)){
    if(ext==='md')continue;const name=`sources/${d.id}.${ext}`;try{writeArtifact(workspace,name,readArtifact(folder,name,30*1024*1024));}catch(error){if(error.code!=='ENOENT')throw error;}

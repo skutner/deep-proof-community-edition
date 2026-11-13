@@ -39,7 +39,7 @@ export async function createPDF(run,folder){
   safePath(folder);const content=await reportHTML(run,folder),fingerprint=createHash('sha256').update(content).digest('hex');
   try{if(readArtifact(folder,'report.pdf.sha256',128).toString()===fingerprint&&readArtifact(folder,'report.pdf',30*1024*1024).subarray(0,5).toString()==='%PDF-')return path.join(folder,'report.pdf');}catch{}
   // Render in a private server-owned directory, never an agent-controlled output path.
-  const temporary=await fs.mkdtemp(path.join(os.tmpdir(),'analyst-pdf-')),output=path.join(temporary,'report.pdf'),html=path.join(temporary,'report.html');
+  const temporary=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'analyst-pdf-')),output=path.join(temporary,'report.pdf'),html=path.join(temporary,'report.html');
   try{
    await fs.writeFile(html,content,{mode:0o600});
    await new Promise((resolve,reject)=>{

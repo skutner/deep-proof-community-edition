@@ -16,6 +16,7 @@ import { reviewPrompt } from './src/reports.mjs';
 import {withQualityWorkspace,publishQualityOutput} from './src/quality-job.mjs';
 import {analysisFailure} from './src/analysis-failure.mjs';
 import {readConsole} from './src/console-feed.mjs';
+import {createRunTrace} from './src/trace.mjs';
 import {publishTimeLimited,progressNotes,wrappedUp,convertTimedOutRuns} from './src/partial-result.mjs';
 import {CHECK_MINUTES,ANALYSIS_MINUTES,DEFAULT_ANALYSIS_MINUTES,chooseMinutes,defaultCheckMinutes} from './src/run-limits.mjs';
 import {QUALITY_SKILL_ID,reportQualitySkill,reportQualityFiles,normalizeOptions,importedReport,qualityDocuments,qualityPrompt} from './src/report-quality.mjs';
@@ -37,7 +38,7 @@ const root=path.dirname(fileURLToPath(import.meta.url));
 const fail=(status,message)=>{throw Object.assign(new Error(message),{status});};
 const str=(v,max=100000)=>{if(typeof v!=='string'||!v.trim()||v.length>max)fail(400,'Invalid or missing text.');return v.trim();};
 const password=v=>{if(typeof v!=='string'||v.length<8||v.length>256)fail(400,'New passwords need 8–256 characters.');return v;};
-export function createApp({dir=process.env.ANALYST_DATA_DIR||path.join(root,'.runtime'),catalog,appRoot=root}={}) {
+export function createApp({dir=process.env.ANALYST_DATA_DIR||path.join(root,'.runtime'),catalog,appRoot=root,env=process.env}={}) {
  dir=path.resolve(dir);
  const db=openStore(dir),attempts=new Map(),deletingProjects=new Set(),liveWork=new Map(); let jobs=0;
  migrateAccess(db);migrateArtifacts(db,dir);migrateTypeSkills(db,dir);convertTimedOutRuns({db,dir});
@@ -383,14 +384,16 @@ export function createApp({dir=process.env.ANALYST_DATA_DIR||path.join(root,'.ru
       const sourceFolder=analysisFolder(dir,pid,source.id),targetFolder=analysisFolder(dir,pid,rid),targetId=qualityInput.sourceReport.documentId;
       for(const [from,to] of [['original.'+source.snapshot.original.type,`sources/${targetId}.${source.snapshot.original.type}`],['original.preview.pdf',`sources/${targetId}.preview.pdf`]])try{writeArtifact(targetFolder,to,readArtifact(sourceFolder,from,30*1024*1024));}catch(error){if(error.code!=='ENOENT')throw error;}
      }
+     // The opt-in process trace (DEEP_PROOF_TRACE=1): null when off; its calls never throw and never change the run.
+     const trace=createRunTrace({dir,pid,rid,env});trace?.runStart({snapshot,createdAt:created});let outcome=null;
      jobs++;
      const folder=analysisFolder(dir,pid,rid),prompt=(quality?qualityPrompt(snapshot):'')+reviewPrompt(snapshot).replace('Do not browse.',builtin&&qualityOptions.researchMode==='external'?'Public external research is explicitly authorized for this run. Do not transmit confidential source text or personal data. Retain dated public sources under quality/external-sources.jsonl and use the rigorous skill evidence rules.':'Do not browse.');
      Promise.resolve().then(async()=>{
-      if(builtin)return withQualityWorkspace(folder,snapshot,async workspace=>{liveWork.set(rid,workspace);let cut=false;try{await invokeALA({root,dir:workspace,settings:snapshot.settings,input:snapshot,prompt,artifactDir:dir,progressDir:folder});cut=wrappedUp(workspace);}catch(error){if(error.code!=='TIME_LIMIT')throw error;let partial=null;try{partial=await readValidatedOutput(workspace,snapshot,'analysis');}catch{}if(!['incomplete','triage'].includes(partial?.quality?.completion))return publishTimeLimited({folder,snapshot,progress:progressNotes(workspace)||progressNotes(folder)});cut=true;}const published=await publishQualityOutput(workspace,folder,snapshot,dir);return cut?{...published,timeLimited:true}:published;});
+      if(builtin)return withQualityWorkspace(folder,snapshot,async workspace=>{trace?.record('workspace-created',{path:workspace});liveWork.set(rid,workspace);let cut=false;try{await invokeALA({root,dir:workspace,settings:snapshot.settings,input:snapshot,prompt,artifactDir:dir,progressDir:folder,trace});cut=wrappedUp(workspace);}catch(error){if(error.code!=='TIME_LIMIT')throw error;let partial=null;try{partial=await readValidatedOutput(workspace,snapshot,'analysis');}catch{}if(!['incomplete','triage'].includes(partial?.quality?.completion)){const notes=publishTimeLimited({folder,snapshot,progress:progressNotes(workspace)||progressNotes(folder)});trace?.record('published',{what:'time-limit-notes',timeLimited:true});return notes;}cut=true;}const published=await publishQualityOutput(workspace,folder,snapshot,dir);trace?.record('published',{what:'check-report',timeLimited:cut});return cut?{...published,timeLimited:true}:published;},{beforeRemove:trace?workspace=>trace.keepWorkspace(workspace):undefined});
       liveWork.set(rid,folder);
-      try{await invokeALA({root,dir:folder,settings:snapshot.settings,input:snapshot,prompt,artifactDir:dir});await readValidatedOutput(folder,snapshot,'analysis');return {format:'markdown',...(wrappedUp(folder)?{timeLimited:true}:{})};}
-      catch(error){if(error.code==='TIME_LIMIT')return publishTimeLimited({folder,snapshot,progress:progressNotes(folder)});throw error;}
-     }).then(result=>run("UPDATE runs SET status='completed',result=? WHERE id=?",JSON.stringify(result),rid)).catch(e=>run("UPDATE runs SET status='failed',error=? WHERE id=?",e.message,rid)).finally(()=>{jobs--;liveWork.delete(rid);});
+      try{await invokeALA({root,dir:folder,settings:snapshot.settings,input:snapshot,prompt,artifactDir:dir,trace});await readValidatedOutput(folder,snapshot,'analysis');const cut=wrappedUp(folder);trace?.record('published',{what:'report',timeLimited:cut});return {format:'markdown',...(cut?{timeLimited:true}:{})};}
+      catch(error){if(error.code==='TIME_LIMIT'){const notes=publishTimeLimited({folder,snapshot,progress:progressNotes(folder)});trace?.record('published',{what:'time-limit-notes',timeLimited:true});return notes;}throw error;}
+     }).then(result=>{run("UPDATE runs SET status='completed',result=? WHERE id=?",JSON.stringify(result),rid);outcome={status:'completed',result};}).catch(e=>{run("UPDATE runs SET status='failed',error=? WHERE id=?",e.message,rid);outcome={status:'failed',error:e};}).finally(()=>{jobs--;liveWork.delete(rid);try{trace?.runEnd(outcome);}catch{}});
      return send({id:rid,status:'running'},202);
     }
    }

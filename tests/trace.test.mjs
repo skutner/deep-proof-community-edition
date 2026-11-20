@@ -214,6 +214,66 @@ test('the hook runs before removal; a throwing hook still removes the folder and
  assert.equal(fs.existsSync(workspace),false);const kept=readTrace(traceFile(dir,'p1','r2')).find(r=>r.type==='workspace-kept');assert.equal(kept.complete,false);assert.equal(kept.skipped.at(-1).reason,'time');
 });
 
+test('nested strings in ALA events are clipped at any depth, and the validator checks them',t=>{
+ const dir=temporary(t,'trace-nested-'),trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON}),file=traceFile(dir,'p1','r1'),limit=TRACE_LIMITS.recordBytes;
+ // The shape of ALA's coding-agent-request: a nested detail and an options array.
+ trace.alaLine('1','@@ALA_EVENT@@'+JSON.stringify({type:'coding-agent-request',id:'q1',detail:{kind:'command',message:'x'.repeat(600000)},options:[{id:'allow',label:'y'.repeat(300000)},'short']}));
+ trace.alaLine('1','@@ALA_EVENT@@'+JSON.stringify({type:'coding-agent-request',id:'q0',detail:{message:'w'.repeat(921600)}}));
+ // An event that needs no clipping is stored exactly as ALA wrote it, key order included.
+ const plain='{"type":"coding-agent-request","id":"q2","detail":{"kind":"command","message":"ls -la"},"options":[{"id":"allow","label":"Allow"},"deny"]}';trace.alaLine('1','@@ALA_EVENT@@'+plain);
+ // Too deep or too many values to walk within the bounds: stored as text, never walked.
+ const deep='{"type":"deep","v":'+'['.repeat(100)+'"x"'+']'.repeat(100)+'}',wide=JSON.stringify({type:'wide',v:Array(110000).fill(0)});
+ trace.alaLine('1','@@ALA_EVENT@@'+deep);trace.alaLine('1','@@ALA_EVENT@@'+wide);
+ trace.runEnd({status:'completed',result:{format:'markdown'}});
+ const records=readTrace(file),[nested,single,exact,tooDeep,tooWide]=records;
+ assert.equal(nested.type,'ala-event');assert.equal(Buffer.byteLength(nested.event.detail.message),limit);assert.equal(Buffer.byteLength(nested.event.options[0].label),limit);
+ assert.deepEqual([nested.event.detail.kind,nested.event.options[0].id,nested.event.options[1],nested.event.id],['command','allow','short','q1']);
+ assert.deepEqual(nested.truncated,{field:'detail',originalBytes:600000,path:['detail','message'],clippedStrings:2});
+ assert.equal(Buffer.byteLength(single.event.detail.message),limit);assert.deepEqual(single.truncated,{field:'detail',originalBytes:921600,path:['detail','message']});
+ assert.equal(JSON.stringify(exact.event),plain);assert.equal(exact.truncated,undefined);
+ assert.deepEqual([tooDeep.type,tooDeep.text],['ala-stderr','@@ALA_EVENT@@'+deep]);assert.deepEqual([tooWide.type,tooWide.text],['ala-stderr','@@ALA_EVENT@@'+wide]);
+ const at='2026-01-01T00:00:00.000Z';
+ assert.throws(()=>validateTraceRecord({seq:1,at,type:'ala-event',turn:'1',event:{type:'x',detail:{message:'x'.repeat(limit+1)}}}),/exceeds the record bound/);
+ assert.throws(()=>validateTraceRecord({seq:1,at,type:'ala-event',turn:'1',event:{type:'x',options:[{label:'x'.repeat(limit+1)}]}}),/exceeds the record bound/);
+ assert.throws(()=>validateTraceRecord({seq:1,at,type:'workspace-kept',files:0,bytes:0,skippedCount:1,skipped:[{name:'x'.repeat(limit+1),reason:'link'}],excluded:[],complete:true,durationMs:0}),/exceeds the record bound/);
+});
+
+test('a non-string validation error is stored as JSON text, and an event key named __proto__ is kept',t=>{
+ const dir=temporary(t,'trace-odd-values-'),trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON}),circular={};circular.self=circular;
+ trace.record('validation',{attempt:1,valid:false,errors:[{code:'E1',line:3},'plain',null,7,circular]});
+ trace.alaLine('1','@@ALA_EVENT@@{"type":"x","__proto__":{"polluted":true}}');
+ trace.alaLine('1','@@ALA_EVENT@@'+JSON.stringify({type:'y',message:'z'.repeat(TRACE_LIMITS.recordBytes+10)}).replace('{','{"__proto__":{"polluted":true},'));
+ trace.runEnd(null);
+ const [validation,kept,clipped]=readTrace(traceFile(dir,'p1','r1'));
+ assert.deepEqual(validation.errors.slice(0,4),['{"code":"E1","line":3}','plain','null','7']);assert.equal(validation.errorCount,5);assert.equal(typeof validation.errors[4],'string');
+ const lines=fs.readFileSync(traceFile(dir,'p1','r1'),'utf8').split('\n');
+ assert.ok(lines[1].includes('"event":{"type":"x","__proto__":{"polluted":true}}'),'kept as an ordinary key');assert.ok(lines[2].includes('"__proto__":{"polluted":true}'),'kept when the event is clipped');
+ assert.equal(Object.hasOwn(kept.event,'__proto__'),true);assert.equal(clipped.truncated.field,'message');assert.equal(({}).polluted,undefined,'no prototype is changed');
+});
+
+test('a copy that never returns is abandoned at its hard bound; the work folder is still removed and nothing is written after',{timeout:30000},async t=>{
+ const dir=temporary(t,'trace-hung-copy-'),input={documents:[{id:'target',file_type:'md'}]};let workspace,release;
+ const hung=createRunTrace({dir,pid:'p1',rid:'r1',env:ON,keepBoundMs:300,io:{lstat:()=>new Promise(()=>{})}});
+ // Tracer level: the promise settles at the bound and an incomplete record says so.
+ const own=fs.mkdtempSync(path.join(dir,'deep-proof-verification-'));fs.writeFileSync(path.join(own,'report.md'),'draft');
+ const started=Date.now();await hung.keepWorkspace(own);assert.ok(Date.now()-started<5000,'settles at its bound');
+ let kept=readTrace(traceFile(dir,'p1','r1')).at(-1);assert.deepEqual([kept.type,kept.complete,kept.files,kept.skipped.at(-1)],['workspace-kept',false,0,{name:'report.md',reason:'time'}]);
+ // Through withQualityWorkspace: the folder is removed and the original result or error is kept.
+ const hook=w=>hung.keepWorkspace(w);
+ assert.equal(await withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'report.md'),'draft');return 'published';},{beforeRemove:hook}),'published');assert.equal(fs.existsSync(workspace),false);
+ await assert.rejects(withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'report.md'),'draft');throw Error('Deep Proof engine exited with code 3. ');},{beforeRemove:hook}),/exited with code 3/);assert.equal(fs.existsSync(workspace),false);
+ // A call that returns after the bound: the abandoned copy writes no file and no record, swallows its errors and
+ // never recreates the removed work folder; nothing is written after run-end either.
+ const late=createRunTrace({dir,pid:'p1',rid:'r2',env:ON,keepBoundMs:300,io:{lstat:file=>new Promise((resolve,reject)=>{release=()=>fs.promises.lstat(file).then(resolve,reject);})}});
+ await withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'report.md'),'draft');fs.writeFileSync(path.join(folder,'second.md'),'more');},{beforeRemove:w=>late.keepWorkspace(w)});
+ assert.equal(fs.existsSync(workspace),false);late.runEnd({status:'completed',result:{format:'markdown'}});
+ const before=fs.readFileSync(traceFile(dir,'p1','r2'),'utf8'),copy=path.join(traceFolder(dir,'p1','r2'),'workspace');
+ release();await new Promise(r=>setTimeout(r,300));
+ assert.equal(fs.readFileSync(traceFile(dir,'p1','r2'),'utf8'),before,'no record after the bound or after run-end');assert.deepEqual(fs.readdirSync(copy),[],'no file is copied after the bound');
+ assert.equal(fs.existsSync(workspace),false,'the removed work folder is not recreated');
+ kept=readTrace(traceFile(dir,'p1','r2'));assert.deepEqual(kept.map(r=>r.type),['workspace-kept','run-end']);assert.equal(kept[0].complete,false);
+});
+
 test('two traces written at the same time keep their own sequence, and runEnd writes one record',t=>{
  const dir=temporary(t,'trace-concurrent-'),a=createRunTrace({dir,pid:'p1',rid:'a',env:ON}),b=createRunTrace({dir,pid:'p1',rid:'b',env:ON});
  for(let i=0;i<20;i++){(i%2?a:b).alaLine('1',`line ${i}`);(i%3?b:a).record('wrap-up',{phase:'start',remainingMs:i});}

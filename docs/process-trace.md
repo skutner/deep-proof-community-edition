@@ -46,13 +46,13 @@ Records are in write order. An `ala-event` or `ala-stderr` line may follow the `
 | `run-start` (always `seq` 1) | `schema` `"deep-proof-trace"`, `version` 1, `runId`, `projectId`, `projectName`, `kind` (`analysis` or `quality`), `createdAt`, `title` (the title of the report under review for `quality`, else null), `sourceReport` (null or `{id,kind,title,documentId}`), `skill` `{id,name,revision,methodologyRevision,verification}`, `agent`, `model`, `effort`, `reportLanguage`, `timeLimitMinutes`, `workMs`, `wrapUpMs`, `maxAttempts`, `qualityOptions` (null or `{depth,researchMode}`), `documents` `[{id,title,fileType,originalName,bytes,sha256}]` (size and SHA-256 of the document's Markdown as UTF-8 bytes, the bytes written to `sources/<id>.md`), `runFolder` (`projects/<pid>/analyses/<rid>`), `server` `{pid,startedAt}`, `limits` `{recordBytes,traceBytes}` | The run row has been inserted. |
 | `workspace-created` | `path` (absolute path of the Check Report work folder) | The work folder is handed to the task. `quality` only. |
 | `turn-start` | `turn`, `attempt`, `repair` (a repair attempt after a failed validation), `continuation` (an empty response continued), `resume` (the ALA session is resumed), `sessionId`, `taskFile` (`task-<turn>.txt` in the working folder), `promptBytes`, `promptSha256`, `remainingMs` | The task file has been written, before ALA is started. |
-| `ala-event` | `turn`, `event` (the parsed object after `@@ALA_EVENT@@`), optional `truncated` `{field,originalBytes}` | A stderr line starts with the prefix and parses as an object. |
+| `ala-event` | `turn`, `event` (the parsed object after `@@ALA_EVENT@@`, keys and order as ALA wrote them), optional `truncated` `{field,originalBytes}` with optional `path` and `clippedStrings` (see Size Bounds) | A stderr line starts with the prefix and parses as an object. |
 | `ala-stderr` | `turn`, `text`, optional `truncated` `{originalBytes}` | Any other non-empty stderr line, or an event line that does not parse. |
 | `reminder-sent` | `turn`, `id` | A progress reminder was written to ALA's input. Its acceptance or rejection arrives as an `ala-event` (`message-accepted`, `message-rejected`). |
 | `progress-note` | `turn`, `text` (the last block of `progress.md`, at most 1,800 characters), `blocks` | Deep Proof sees `progress.md` change. |
 | `turn-end` | `turn`, `outcome` (`exited`, `time_limit`, `spawn_error`), `exitCode` (integer or null), `signal` (string or null), `durationMs`, optional `error` (the last 3,000 characters) | The turn ends. |
 | `continuation` | `attempt`, `reason` `"empty_response"`, `used` | An empty response is retried in the same session. |
-| `validation` | `attempt`, `valid`, `errorCount`, `errors` (at most 100 strings of at most 2,000 characters) | After each validation, passed or failed, including `wrapup`. |
+| `validation` | `attempt`, `valid`, `errorCount`, `errors` (at most 100 strings of at most 2,000 characters; an error that is not a string is stored as its JSON text) | After each validation, passed or failed, including `wrapup`. |
 | `time-limit` | `elapsedMs`, `workMs` | The run catches the time-limit error. |
 | `wrap-up` | `phase` (`start`, `validated`, `not-validated`), optional `remainingMs` | Around the wrap-up turn. |
 | `published` | `what` (`report`, `check-report`, `time-limit-notes`), `timeLimited` | The result was written to the run folder. |
@@ -63,23 +63,26 @@ Records are in write order. An `ala-event` or `ala-stderr` line may follow the `
 
 `run-end` is written once and closes the trace. When the run's final state could not be stored (both database updates failed), `run-end` says `status` `failed`, `failureCode` `unexpected` and `error` "Deep Proof could not store the final state of this run."; the run row then stays `running` until the next start of the server marks it failed. A trace without `run-end` belongs to a run that is still going or to a server that stopped.
 
-Reasons in `skipped`: `link`, `hard-link` (a file with a second name), `not-regular`, `too-large`, `depth`, `unreadable`, and, where the copy stopped, `file-limit`, `byte-limit` or `time`.
+Reasons in `skipped`: `link`, `hard-link` (a file with a second name), `not-regular`, `too-large`, `depth`, `unreadable`, and, where the copy stopped, `file-limit`, `byte-limit` or `time` (the name is `.` when the copy stopped before its first entry).
+
+Event keys are kept as ordinary keys, including one named `__proto__`; readers must not merge an event into an object with prototype semantics.
 
 ## Size Bounds
 
 | Bound | Value | Behaviour |
 | --- | --- | --- |
-| One record | 262,144 bytes of text per string field | The field is clipped at a character boundary; `truncated` says how long it was. A stderr line over 1,048,576 bytes is not parsed and is stored clipped as `ala-stderr`. |
+| One record | 262,144 bytes of text per string field, at any depth | The string is clipped at a character boundary. In an `ala-event`, `truncated` describes the largest cut: `field` is the top-level key under which it lies and `originalBytes` its length before clipping; `path` (only when the string is nested) is the list of keys and array indexes from the event to it, starting with `field`; `clippedStrings` (only when more than one string was cut) is the number of cuts. A single clipped top-level field therefore still gives `{field,originalBytes}`. An event nested deeper than 64 levels or holding more than 100,000 values is not walked: its line is stored as `ala-stderr` text (clipped like any line). A stderr line over 1,048,576 bytes is not parsed and is stored clipped as `ala-stderr`. |
 | One trace file | 67,108,864 bytes | One `trace-limit` record; later ALA lines are counted in `droppedAlaLines`, not written; Deep Proof's own step records are still written. |
 | Kept copy, one file | 8,388,608 bytes | Skipped and listed in `skipped` as `too-large`. |
-| Kept copy, total | 67,108,864 bytes, 2,000 files, 10 seconds | The copy stops; `complete` is false. |
+| Kept copy, total | 67,108,864 bytes, 2,000 files, 10 seconds | The copy stops; `complete` is false. The 10 seconds are checked between files. |
+| Kept copy, hard bound | 12 seconds | Whatever the copy is doing (for example a file-system call that does not return), the hook settles and the work folder is removed. A `workspace-kept` record with `complete` false lists the entry being copied as `time` (or `workspace-keep-failed` if the copy had not started). The abandoned copy writes no further file or record, stops at its next step, and never writes to or recreates the work folder. |
 | Kept copy, depth | 8 levels below the work folder | A folder whose entries would lie deeper is not copied and is listed as `depth`; the copy goes on and `complete` is false. |
 
 ## Kept Work Folder Copy
 
 A Check Report runs in a private temporary folder that Deep Proof removes when the run ends. With the trace on, the folder is copied to `traces/<run-id>/workspace/` first: on success, on failure and at the time limit, always before the removal. Copied: every regular file with one name reached without a symbolic link, except the top-level entries `skills`, `validation`, `sources`, `input.json` and `evidence-lines.json`. That keeps the prompts (`task.txt`, `task-*.txt`), the responses (`response-*.txt`), the validation results, `progress.md`, the draft `report.md`, `quality/`, `quality-input/`, `charts/`, the ALA session transcript in `.ala/sessions/`, `config.json`, `output-contract.json` and whatever else the agent wrote. Left out because bulky or found elsewhere: the skill copies, the validator copy, the sources (already in the run folder), `input.json` (its needed facts are in `run-start`) and `evidence-lines.json`.
 
-The copy is made file by file without blocking the server. A failing or slow copy never stops the removal of the work folder and never changes the run's result or error; its own time bound is 10 seconds. Because the copy runs between the publication of a Check Report and the update of its run row, a server crash in those seconds marks an already published check as failed at the next start ("Server restarted before this run completed."). After a server crash nothing is copied and nothing is removed: the work folder stays where `workspace-created` says.
+The copy is made file by file without blocking the server. A failing or slow copy never stops the removal of the work folder and never changes the run's result or error; its own time bound is 10 seconds, checked between files, with a hard bound of 12 seconds after which the copy is abandoned. Because the copy runs between the publication of a Check Report and the update of its run row, a server crash in those seconds marks an already published check as failed at the next start ("Server restarted before this run completed."). After a server crash nothing is copied and nothing is removed: the work folder stays where `workspace-created` says.
 
 ## Guarantees
 

@@ -34,6 +34,60 @@ test('trace is off unless DEEP_PROOF_TRACE is exactly 1, and then nothing is cre
  assert.throws(()=>traceFolder(dir,'p1','../r1'),/Invalid artifact identifier/);assert.throws(()=>traceFolder(dir,'p/1','r1'),/Invalid artifact identifier/);
 });
 
+// The golden version 1 sample, tests/fixtures/trace-v1-sample.jsonl, is exactly what this fixed script of tracer calls
+// writes: a hand-scripted Check Report (no model output) with a clock that starts at 2026-01-01T00:00:00.000Z and
+// advances 1,000 ms per record, server pid 4242, and every duration given as an input. Readers of the trace (the
+// lean_documents process viewer) keep a byte-identical copy. Do not regenerate the sample automatically.
+const SAMPLE_START=Date.parse('2026-01-01T00:00:00.000Z'),event=fields=>'@@ALA_EVENT@@'+JSON.stringify(fields);
+function writeSampleTrace(dir){
+ let tick=0;const trace=createRunTrace({dir,pid:'project-sample',rid:'run-sample',env:ON,now:()=>SAMPLE_START+1000*tick++,serverPid:4242,serverStartedAt:'2025-12-31T23:00:00.000Z'});
+ const report='# Quarterly Revenue Report\n\nRevenue in 2025 was EUR 12 million.\n',minutes='# Board Minutes, 12 March 2025\n\nThe board noted revenue of EUR 10 million for 2025.\n',session='9b2f6a3e-0c4d-4e8f-9a51-2d7c8e6b1f30',prompt='Check the report under review.';
+ trace.runStart({createdAt:'2026-01-01T00:00:00.000Z',snapshot:{kind:'quality',project:{id:'project-sample',company:'Sample Holding'},report_language:'en',type:{id:'report-quality',name:'Rigorous Report Verification',skill_revision:'skill-revision-sample',methodology_revision:'1.0'},verification:{status:'demo'},settings:{agent:'codex',models:{codex:'gpt-6-luna'},efforts:{codex:'high'}},timeLimitMinutes:10,qualityOptions:{depth:'deep',researchMode:'closed'},sourceReport:{id:'report-source-sample',kind:'imported',title:'Quarterly Revenue Report',documentId:'report-under-review',criteria:null},documents:[{id:'report-under-review',title:'Quarterly Revenue Report',markdown:report,file_type:'md',original_name:'report-7d1c2b9e4a10.md'},{id:'board-minutes',title:'Board Minutes, 12 March 2025',markdown:minutes,file_type:'md',original_name:'board-minutes.md'}]}});
+ trace.record('workspace-created',{path:'/tmp/deep-proof-verification-sample'});
+ trace.turnStart({turn:1,resume:false,sessionId:session,prompt,remainingMs:480000});
+ trace.alaLine(1,event({type:'coding-agent-selected',agent:'codex',permissionMode:'full-access',model:'gpt-6-luna'}));
+ trace.alaLine(1,'ala: sandbox ready');
+ trace.alaLine(1,event({type:'coding-agent-message',agent:'codex',message:'I will read the report under review ',outputKind:'assistant',outputComplete:false,outputId:'msg-1'}));
+ trace.alaLine(1,event({type:'coding-agent-message',agent:'codex',message:'and the board minutes first. Notă: raportul afirmă „EUR 12 milioane”, iar procesul-verbal spune 10; 𝔼 <script>alert(1)</script>',outputKind:'assistant',outputComplete:true,outputId:'msg-1'}));
+ trace.alaLine(1,event({type:'coding-agent-message',agent:'codex',message:'sources/report-under-review.md\nsources/board-minutes.md\n',outputKind:'output',outputComplete:false}));
+ trace.progress(1,'Read the report and the minutes. The revenue figures differ: EUR 12 million against EUR 10 million.');
+ trace.record('reminder-sent',{turn:'1',id:'progress-1'});
+ trace.alaLine(1,event({type:'message-accepted',id:'progress-1',delivery:'delivered'}));
+ trace.turnEnd({turn:1,outcome:'exited',exitCode:1,signal:null,durationMs:95000,error:'Deep Proof engine exited with code 1. ala: Codex completed without a final response.\n'});
+ trace.record('continuation',{attempt:1,reason:'empty_response',used:1});
+ trace.turnStart({turn:'1-continue1',resume:true,sessionId:session,prompt:prompt+'\nThe previous turn ended without any output.',remainingMs:385000});
+ trace.alaLine('1-continue1',event({type:'coding-agent-final',agent:'codex',message:'report.md is written; the validator reported two problems.'}));
+ trace.turnEnd({turn:'1-continue1',outcome:'exited',exitCode:0,signal:null,durationMs:120000});
+ trace.record('validation',{attempt:1,valid:false,errors:['Finding F1 cites sources/board-minutes.md lines 3-3, but its quote is not on those lines.','quality/coverage.json must set completion.']});
+ trace.turnStart({turn:2,resume:true,sessionId:session,prompt:prompt+'\nThe previous attempt did not pass the application validator.',remainingMs:262000});
+ trace.alaLine(2,event({type:'coding-agent-message',agent:'codex',message:'Repairing the quote of F1.',outputKind:'assistant',outputComplete:true,outputId:'msg-2'}));
+ trace.progress(2,'Read the report and the minutes. The revenue figures differ: EUR 12 million against EUR 10 million.\n\n---\n\nRepairing the citation of finding F1 against the minutes, line 3.');
+ trace.record('reminder-sent',{turn:'2',id:'progress-2'});
+ trace.alaLine(2,event({type:'message-rejected',id:'progress-2',error:'Execution is no longer accepting messages.'}));
+ trace.turnEnd({turn:2,outcome:'time_limit',exitCode:null,signal:'SIGKILL',durationMs:262000,error:'Deep Proof reached its review time limit. No validated report was produced.'});
+ trace.record('time-limit',{elapsedMs:480000,workMs:480000});
+ trace.record('wrap-up',{phase:'start',remainingMs:120000});
+ trace.turnStart({turn:'wrapup',resume:true,sessionId:session,prompt:prompt+'\nTHE TIME LIMIT HAS BEEN REACHED.',remainingMs:120000});
+ trace.alaLine('wrapup',event({type:'coding-agent-final',agent:'codex',message:'The wrap-up report is written and validated.'}));
+ trace.turnEnd({turn:'wrapup',outcome:'exited',exitCode:0,signal:null,durationMs:70000});
+ trace.record('validation',{attempt:'wrapup',valid:true,errors:[]});
+ trace.record('wrap-up',{phase:'validated'});
+ trace.record('published',{what:'check-report',timeLimited:true});
+ trace.record('workspace-kept',{files:14,bytes:48213,skippedCount:0,skipped:[],excluded:['evidence-lines.json','input.json','skills','sources','validation'],complete:true,durationMs:42});
+ trace.runEnd({status:'completed',result:{format:'markdown',timeLimited:true,quality:{completion:'incomplete',confirmedFindings:1,findings:[]}}});
+ return traceFile(dir,'project-sample','run-sample');
+}
+
+test('trace records match the version 1 sample byte for byte (injected clock and pid)',t=>{
+ const dir=temporary(t,'trace-sample-'),file=writeSampleTrace(dir);
+ const expected=fs.readFileSync(new URL('./fixtures/trace-v1-sample.jsonl',import.meta.url));
+ assert.ok(fs.readFileSync(file).equals(expected),'the scripted trace equals tests/fixtures/trace-v1-sample.jsonl byte for byte');
+ const records=readTrace(file);
+ assert.equal(records[0].type,'run-start');assert.equal(records[0].at,'2026-01-01T00:00:00.000Z');assert.equal(records.at(-1).at,new Date(SAMPLE_START+1000*(records.length-1)).toISOString());
+ assert.equal(records[0].server.pid,4242);assert.equal(records[0].workMs,480000);assert.equal(records[0].wrapUpMs,120000);assert.equal(records.at(-1).durationMs,1000*(records.length-1));
+ assert.ok(!expected.toString().includes('/Users/'),'the sample holds no private path');
+});
+
 test('oversized records are clipped and the size limit stops ALA lines but not host steps',t=>{
  const dir=temporary(t,'trace-limits-'),trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON}),file=traceFile(dir,'p1','r1');
  // A 300 KiB event line is parsed and its long field clipped; a 2 MiB line is not parsed and is stored clipped.

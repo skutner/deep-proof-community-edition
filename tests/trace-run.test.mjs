@@ -16,8 +16,9 @@ import {QUALITY_SKILL_ID} from '../src/report-quality.mjs';
 import {testCatalog} from './support/catalog.mjs';
 
 // No model is started here. The stand-in for ALA below is a test fixture passed as settings.alaPath, never a
-// simulated agent in application execution. An exported ALA_CLI would outrank it and reach the real ALA.
-assert.equal(process.env.ALA_CLI,undefined,'unset ALA_CLI before running the trace run tests');
+// simulated agent in application execution. An ALA_CLI set while a test runs would outrank it and reach the real
+// ALA, so every test checks first (inside the test: other files in the same process may set and restore it).
+const noALA=()=>assert.equal(process.env.ALA_CLI,undefined,'unset ALA_CLI before running the trace run tests');
 const root=path.resolve(import.meta.dirname,'..'),ON={DEEP_PROOF_TRACE:'1'};
 const fixture=JSON.parse(fs.readFileSync(path.join(root,'tests/fixtures/revenue-review.json'),'utf8'));
 const temporary=(t,prefix)=>{const dir=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),prefix));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;};
@@ -46,6 +47,7 @@ async function tracedInvoke(t,prefix,script,{env={}}={}){
 }
 
 test('time limit: turn, kill, wrap-up and notes are traced in order (fake ALA, no model)',async t=>{
+ noALA();
  // The first turn records a note and hangs until the limit kills it; the resumed wrap-up turn exits without a report.
  const run=await tracedInvoke(t,'trace-time-limit-',`fs.appendFileSync(cwd+'/fake-ala-calls.log',JSON.stringify({resume})+'\\n');
 if(!resume){fs.writeFileSync(cwd+'/progress.md','Prima observație preliminară.\\n');setInterval(()=>{},1000);}`,{env:{DEEP_PROOF_WORK_MS:'2500',DEEP_PROOF_WRAPUP_MS:'4000'}});
@@ -68,6 +70,7 @@ if(!resume){fs.writeFileSync(cwd+'/progress.md','Prima observație preliminară.
 });
 
 test('three failed validations are traced with their errors (fake ALA, no model)',async t=>{
+ noALA();
  const run=await tracedInvoke(t,'trace-three-failures-',`process.stderr.write('stand-in: no report written\\n');`);
  assert.match(run.failure?.message||'',/could not validate the review after 3 attempts/);
  run.trace.runEnd({status:'failed',error:run.failure});
@@ -83,6 +86,7 @@ test('three failed validations are traced with their errors (fake ALA, no model)
 });
 
 test('a repaired report is traced: validation failed, repair prompt, validation passed (fake ALA, no model)',async t=>{
+ noALA();
  // The first turn reports its agent and writes nothing; the resumed repair turn copies the recorded report (as E29 does).
  const report=JSON.stringify(path.join(root,'tests/fixtures/revenue-review.md')),charts=JSON.stringify(path.join(root,'tests/fixtures/charts'));
  const run=await tracedInvoke(t,'trace-repaired-',`const event=e=>process.stderr.write('@@ALA_EVENT@@'+JSON.stringify(e)+'\\n');
@@ -133,6 +137,7 @@ async function runState(app,dir,pid,rid){
 }
 
 test('a failing Check Report records its work folder, keeps a copy and removes the folder (fake ALA, no model)',async t=>{
+ noALA();
  const dir=temporary(t,'trace-check-'),app=await startApp(t,dir,ON,failingALA(dir));
  const pid=(await app.call('/projects',{company:'Traced Check'},app.admin)).data.id,source=await importReport(app,pid),rid=await startCheck(app,pid,source);
  const file=path.join(traceFolder(dir,pid,rid),'trace.jsonl');await settle(app,rid,file);
@@ -157,6 +162,7 @@ test('a failing Check Report records its work folder, keeps a copy and removes t
 });
 
 test('with the trace off the same failing Check Report leaves no traces folder (fake ALA, no model)',async t=>{
+ noALA();
  const dir=temporary(t,'trace-check-off-'),app=await startApp(t,dir,{},failingALA(dir));
  const pid=(await app.call('/projects',{company:'Untraced Check'},app.admin)).data.id,rid=await startCheck(app,pid,await importReport(app,pid));await settle(app,rid);
  const row=app.db.prepare('SELECT status,error FROM runs WHERE id=?').get(rid);assert.equal(row.status,'failed');assert.match(row.error,/exited with code 3/);
@@ -166,6 +172,7 @@ test('with the trace off the same failing Check Report leaves no traces folder (
 });
 
 test('a trace that cannot be written leaves the run unchanged',async t=>{
+ noALA();
  const dir=temporary(t,'trace-check-unwritable-'),ala=failingALA(dir);
  // The same failing Check Report twice in one project: first with the trace off, then with it on and its folder blocked.
  const off=await startApp(t,dir,{},ala),pid=(await off.call('/projects',{company:'Blocked Trace'},off.admin)).data.id,source=await importReport(off,pid);
@@ -184,6 +191,7 @@ test('a trace that cannot be written leaves the run unchanged',async t=>{
 });
 
 test('the verification bundle is the same with and without a traces folder, and a path into it is refused',async t=>{
+ noALA();
  // The hand-built saved check of report-quality.test.mjs: recorded report content and hand-authored export metadata.
  const dir=temporary(t,'trace-bundle-'),app=await startApp(t,dir,ON,path.join(dir,'no-ala'));
  const pid=(await app.call('/projects',{company:'Export Transport'},app.admin)).data.id;
@@ -196,4 +204,69 @@ test('the verification bundle is the same with and without a traces folder, and 
  const withTraces=await get('');assert.equal(withTraces.status,200);assert.ok(withTraces.bytes.equals(bundle.bytes),'the bundle bytes do not change');assert.ok(!withTraces.bytes.toString().includes('trace'));
  for(const query of ['?file=../../traces/export-test/trace.jsonl','?file=../../traces/export-test/workspace/report.md','?file='+encodeURIComponent('../../traces/export-test/trace.jsonl')])assert.equal((await get(query)).status,404,query);
  await app.close();
+});
+
+// Runs fn with the time limits shortened in this process too: invokeALA reads them from the process environment.
+async function withLimits(limits,fn){
+ const saved={...process.env};Object.assign(process.env,limits);
+ try{return await fn();}finally{for(const key of Object.keys(limits))if(saved[key]===undefined)delete process.env[key];else process.env[key]=saved[key];}
+}
+// The run state of two runs of the same request, with the run ids, the per-run skill revision ids and the times set aside.
+function sameRun(after,before,ids){
+ const revision=state=>JSON.parse(state.row.snapshot).type.skill_revision,times=text=>text.replace(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z/g,'<time>');
+ const plain=(state,rid)=>JSON.parse(times(JSON.stringify(state).replaceAll(revision(state),'<revision>').replaceAll(rid,'<run>')));
+ return [plain(after,ids[1]),plain(before,ids[0])];
+}
+
+test('a time-limited Check Report is traced through the server and its run is the same with the trace off (fake ALA, no model)',async t=>{
+ noALA();
+ // The first turn records a note and hangs until the limit kills it; the resumed wrap-up turn exits without a report.
+ const dir=temporary(t,'trace-check-limit-'),log=JSON.stringify(path.join(dir,'work-folders.log')),limits={DEEP_PROOF_WORK_MS:'2500',DEEP_PROOF_WRAPUP_MS:'3000'};
+ const ala=fakeALA(dir,`fs.appendFileSync(${log},cwd+'\\n');if(!resume){fs.writeFileSync(cwd+'/progress.md','Prima observație preliminară.\\n');setInterval(()=>{},1000);}`);
+ await withLimits(limits,async()=>{
+  const off=await startApp(t,dir,{...limits},ala),pid=(await off.call('/projects',{company:'Time-Limited Check'},off.admin)).data.id,source=await importReport(off,pid);
+  const first=await startCheck(off,pid,source);await settle(off,first);const before=await runState(off,dir,pid,first);await off.close();
+  assert.equal(fs.existsSync(path.join(projectFolder(dir,pid),'traces')),false,'the untraced run writes no trace');
+  const on=await startApp(t,dir,{...limits,...ON}),second=await startCheck(on,pid,source),file=path.join(traceFolder(dir,pid,second),'trace.jsonl');
+  await settle(on,second,file);const after=await runState(on,dir,pid,second);await on.close();
+  const [same,expected]=sameRun(after,before,[first,second]);assert.deepEqual(same,expected,'the run row, the run folder and the API answers are those of the untraced run');
+  const result=JSON.parse(after.row.result);assert.equal(after.row.status,'completed');assert.deepEqual(result.partial,{reason:'time_limit'});assert.equal(result.quality.timeLimited,true);
+  assert.match(after.files['report.md'],/Prima observație preliminară\./,'the notes are published');
+  const records=readTrace(file),steps=hostSteps(records);
+  assert.deepEqual(steps.map(r=>r.type),['run-start','workspace-created','turn-start','progress-note','turn-end','time-limit','wrap-up','turn-start','turn-end','validation','wrap-up','published','workspace-kept','run-end']);
+  const get=(type,i=0)=>steps.filter(r=>r.type===type)[i];
+  assert.deepEqual([get('run-start').workMs,get('run-start').wrapUpMs,get('time-limit').workMs],[2500,3000,2500],'run-start states the limits the run used');
+  assert.deepEqual([get('turn-end').outcome,get('turn-end').signal,get('turn-start',1).turn,get('turn-start',1).resume],['time_limit','SIGKILL','wrapup',true]);
+  assert.deepEqual([get('wrap-up').phase,get('wrap-up').remainingMs,get('wrap-up',1).phase,get('validation').attempt,get('validation').valid],['start',3000,'not-validated','wrapup',false]);
+  assert.deepEqual([get('published').what,get('published').timeLimited],['time-limit-notes',true]);
+  const created=get('workspace-created').path;assert.equal(fs.existsSync(created),false,'the work folder is removed');assert.equal(get('workspace-kept').complete,true);
+  assert.ok(fs.readFileSync(path.join(traceFolder(dir,pid,second),'workspace/task-wrapup.txt'),'utf8').includes('THE TIME LIMIT HAS BEEN REACHED'),'the kept copy holds the wrap-up prompt');
+  const end=get('run-end');assert.deepEqual([end.status,end.timeLimited,end.partial,end.failureCode,end.error,end.quality],['completed',true,true,null,null,{completion:'incomplete',confirmedFindings:0}]);
+  for(const work of workFolders(dir))assert.equal(fs.existsSync(work),false);
+ });
+});
+
+test('a completed analysis is traced through the server and its run is the same with the trace off (fake ALA, no model)',async t=>{
+ noALA();
+ // Recorded real model output (tests/fixtures/revenue-review.md and charts, as E29) is copied by the stand-in; the
+ // Analyst Skill and the documents are the fixture's own, seeded before the server starts.
+ const dir=temporary(t,'trace-analysis-'),report=JSON.stringify(path.join(root,'tests/fixtures/revenue-review.md')),charts=JSON.stringify(path.join(root,'tests/fixtures/charts'));
+ const ala=fakeALA(dir,`fs.copyFileSync(${report},cwd+'/report.md');fs.cpSync(${charts},cwd+'/charts',{recursive:true});`);
+ const store=openStore(dir);store.prepare('INSERT INTO types(id,name,criteria,playbook) VALUES(?,?,?,?)').run('revenue-review','Revenue Review',fixture.snapshot.type.criteria,fixture.snapshot.type.playbook);store.close();
+ const analyse=async(app,pid)=>{const started=await app.call(`/projects/${pid}/analyses`,{skillId:'revenue-review'},app.admin);assert.equal(started.status,202,JSON.stringify(started.data));return started.data.id;};
+ const off=await startApp(t,dir,{},ala),pid=(await off.call('/projects',{company:'Acceptance review'},off.admin)).data.id;
+ for(const d of fixture.snapshot.documents)off.db.prepare('INSERT INTO documents(id,project_id,title,markdown) VALUES(?,?,?,?)').run(d.id,pid,d.title,d.markdown);
+ const first=await analyse(off,pid);await settle(off,first);const before=await runState(off,dir,pid,first);await off.close();
+ assert.equal(before.row.status,'completed',before.row.error);
+ const on=await startApp(t,dir,ON),second=await analyse(on,pid),file=path.join(traceFolder(dir,pid,second),'trace.jsonl');
+ await settle(on,second,file);const after=await runState(on,dir,pid,second);await on.close();
+ const [same,expected]=sameRun(after,before,[first,second]);assert.deepEqual(same,expected,'the run row, the run folder and the API answers are those of the untraced run');
+ assert.ok(!Object.keys(after.files).some(name=>/trace/.test(name)),'nothing of the trace is in the run folder, the agent\'s working folder');
+ const records=readTrace(file),steps=hostSteps(records);
+ assert.deepEqual(steps.map(r=>r.type),['run-start','turn-start','turn-end','validation','published','run-end']);
+ const [start,turn,ended,validation,published,end]=steps;
+ assert.deepEqual([start.kind,start.title,start.sourceReport,start.skill.id,start.documents.map(d=>d.id).sort()],['analysis',null,null,'revenue-review',['accounts','management']]);
+ assert.deepEqual([turn.turn,turn.repair,ended.outcome,ended.exitCode,validation.attempt,validation.valid],['1',false,'exited',0,1,true]);
+ assert.deepEqual([published.what,published.timeLimited],['report',false]);
+ assert.deepEqual([end.status,end.timeLimited,end.partial,end.failureCode,end.quality],['completed',false,false,null,null]);
 });

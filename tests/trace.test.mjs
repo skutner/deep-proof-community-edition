@@ -7,8 +7,8 @@ import {spawnSync} from 'node:child_process';
 import {createRunTrace,traceEnabled,traceFolder,validateTraceRecord,TRACE_LIMITS,KEEP_EXCLUDED,TRACE_VERSION} from '../src/trace.mjs';
 import {withQualityWorkspace} from '../src/quality-job.mjs';
 
-// These tests never start ALA or a model. An exported ALA_CLI would not be used here, but fail loudly anyway.
-assert.equal(process.env.ALA_CLI,undefined,'unset ALA_CLI before running the trace tests');
+// These tests never resolve or start ALA and never start a model. The hook test is the only one that could reach
+// ALA's code path at all, so it checks that ALA_CLI is unset (see tests/trace-run.test.mjs).
 const ON={DEEP_PROOF_TRACE:'1'};
 const temporary=(t,prefix)=>{const dir=fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()),prefix));t.after(()=>fs.rmSync(dir,{recursive:true,force:true}));return dir;};
 // Every record read back must pass the version 1 validator, with seq counting from 1 without a gap.
@@ -30,6 +30,7 @@ test('trace is off unless DEEP_PROOF_TRACE is exactly 1, and then nothing is cre
  assert.deepEqual(fs.readdirSync(dir),[],'no folder and no file is created while the trace is off');assert.deepEqual(lines,[],'nothing is printed while the trace is off');
  assert.equal(traceEnabled(ON),true);
  const trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON});assert.ok(trace);trace.runEnd({status:'completed',result:{format:'markdown'}});
+ assert.deepEqual(readTrace(traceFile(dir,'p1','r1')).map(r=>[r.type,r.status]),[['run-end','completed']]);
  assert.deepEqual(tree(dir),['projects/','projects/p1/','projects/p1/traces/','projects/p1/traces/r1/','projects/p1/traces/r1/trace.jsonl']);
  assert.equal(fs.statSync(traceFolder(dir,'p1','r1')).mode&0o777,0o700);assert.equal(fs.statSync(traceFile(dir,'p1','r1')).mode&0o777,0o600);
  assert.throws(()=>traceFolder(dir,'p1','../r1'),/Invalid artifact identifier/);assert.throws(()=>traceFolder(dir,'p/1','r1'),/Invalid artifact identifier/);
@@ -193,6 +194,7 @@ test('the kept copy stops at its file, byte, depth and time bounds',async t=>{
 });
 
 test('the hook runs before removal; a throwing hook still removes the folder and keeps the original error',async t=>{
+ assert.equal(process.env.ALA_CLI,undefined,'unset ALA_CLI before running the trace tests');
  const dir=temporary(t,'trace-hook-'),input={documents:[{id:'target',file_type:'md'}]};let workspace,seen;
  // The hook sees the work folder as the task left it, and the folder is removed afterwards.
  const result=await withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'report.md'),'draft');return 'published';},{beforeRemove:async folder=>{seen=fs.readFileSync(path.join(folder,'report.md'),'utf8');}});
@@ -206,6 +208,7 @@ test('the hook runs before removal; a throwing hook still removes the folder and
  const trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON});
  await assert.rejects(withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'task-1.txt'),'prompt');throw Error('Deep Proof engine exited with code 3. ');},{beforeRemove:w=>trace.keepWorkspace(w)}),/exited with code 3/);
  assert.equal(fs.existsSync(workspace),false);assert.equal(fs.readFileSync(path.join(traceFolder(dir,'p1','r1'),'workspace/task-1.txt'),'utf8'),'prompt');
+ const failed=readTrace(traceFile(dir,'p1','r1'));assert.deepEqual(failed.map(r=>r.type),['workspace-kept']);assert.deepEqual([failed[0].files,failed[0].complete],[1,true]);
  let reads=0;const slow=createRunTrace({dir,pid:'p1',rid:'r2',env:ON,now:()=>Date.UTC(2026,0,1)+(++reads>2?60000:0)});
  assert.equal(await withQualityWorkspace(dir,input,async folder=>{workspace=folder;for(let i=0;i<5;i++)fs.writeFileSync(path.join(folder,`f${i}`),'x');return 'late';},{beforeRemove:w=>slow.keepWorkspace(w)}),'late');
  assert.equal(fs.existsSync(workspace),false);const kept=readTrace(traceFile(dir,'p1','r2')).find(r=>r.type==='workspace-kept');assert.equal(kept.complete,false);assert.equal(kept.skipped.at(-1).reason,'time');

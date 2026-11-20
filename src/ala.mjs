@@ -14,7 +14,7 @@ import {readValidatedOutput,recordValidationFailure,outputFile} from './output-v
 import {resolveALA,alaUnavailable} from './ala-location.mjs';
 import {prepareQualityInputs} from '../skills/report-quality/scripts/prepare.mjs';
 import {runLimits} from './run-limits.mjs';
-const MAX_ATTEMPTS=3;
+export const MAX_ATTEMPTS=3;
 // Marks a stopped run whose time ran out, so it can be published as a partial result instead of failing.
 export const timeLimitError=()=>Object.assign(Error('Deep Proof reached its review time limit. No validated report was produced.'),{code:'TIME_LIMIT'});
 export async function prepareALAJob({root,dir,settings,input,prompt,kind,artifactDir}){

@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {spawnSync} from 'node:child_process';
 import {createRunTrace,traceEnabled,traceFolder,validateTraceRecord,TRACE_LIMITS,KEEP_EXCLUDED,TRACE_VERSION} from '../src/trace.mjs';
+import {withQualityWorkspace} from '../src/quality-job.mjs';
 
 // These tests never start ALA or a model. An exported ALA_CLI would not be used here, but fail loudly anyway.
 assert.equal(process.env.ALA_CLI,undefined,'unset ALA_CLI before running the trace tests');
@@ -189,6 +190,25 @@ test('the kept copy stops at its file, byte, depth and time bounds',async t=>{
  // The copy's own deadline, on the injected clock: the sixth look at the clock is 11 seconds later.
  let reads=0;const start=Date.UTC(2026,0,1),slow=await keep('time',w=>{for(let i=0;i<10;i++)fs.writeFileSync(path.join(w,`t${i}`),'x');},{now:()=>start+(++reads>5?11000:0)});
  assert.equal(slow.kept.complete,false);assert.equal(slow.kept.skipped.at(-1).reason,'time');assert.ok(slow.kept.files<10);assert.equal(fs.readdirSync(slow.copy).length,slow.kept.files);assert.ok(slow.kept.durationMs>=TRACE_LIMITS.keptMs);
+});
+
+test('the hook runs before removal; a throwing hook still removes the folder and keeps the original error',async t=>{
+ const dir=temporary(t,'trace-hook-'),input={documents:[{id:'target',file_type:'md'}]};let workspace,seen;
+ // The hook sees the work folder as the task left it, and the folder is removed afterwards.
+ const result=await withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'report.md'),'draft');return 'published';},{beforeRemove:async folder=>{seen=fs.readFileSync(path.join(folder,'report.md'),'utf8');}});
+ assert.equal(result,'published');assert.equal(seen,'draft');assert.equal(fs.existsSync(workspace),false);
+ // A throwing hook changes neither the result nor the error, and the folder is still removed.
+ assert.equal(await withQualityWorkspace(dir,input,async folder=>{workspace=folder;return 'kept';},{beforeRemove:async()=>{throw Error('hook failed');}}),'kept');assert.equal(fs.existsSync(workspace),false);
+ await assert.rejects(withQualityWorkspace(dir,input,async folder=>{workspace=folder;throw Error('Execution failed');},{beforeRemove:()=>{throw Error('hook failed');}}),/Execution failed/);assert.equal(fs.existsSync(workspace),false);
+ // Without a hook the lifecycle is today's.
+ assert.equal(await withQualityWorkspace(dir,input,async folder=>{workspace=folder;return 'plain';}),'plain');assert.equal(fs.existsSync(workspace),false);
+ // The real hook: the tracer copies on failure, then the folder goes; a copy past its deadline still lets it go.
+ const trace=createRunTrace({dir,pid:'p1',rid:'r1',env:ON});
+ await assert.rejects(withQualityWorkspace(dir,input,async folder=>{workspace=folder;fs.writeFileSync(path.join(folder,'task-1.txt'),'prompt');throw Error('Deep Proof engine exited with code 3. ');},{beforeRemove:w=>trace.keepWorkspace(w)}),/exited with code 3/);
+ assert.equal(fs.existsSync(workspace),false);assert.equal(fs.readFileSync(path.join(traceFolder(dir,'p1','r1'),'workspace/task-1.txt'),'utf8'),'prompt');
+ let reads=0;const slow=createRunTrace({dir,pid:'p1',rid:'r2',env:ON,now:()=>Date.UTC(2026,0,1)+(++reads>2?60000:0)});
+ assert.equal(await withQualityWorkspace(dir,input,async folder=>{workspace=folder;for(let i=0;i<5;i++)fs.writeFileSync(path.join(folder,`f${i}`),'x');return 'late';},{beforeRemove:w=>slow.keepWorkspace(w)}),'late');
+ assert.equal(fs.existsSync(workspace),false);const kept=readTrace(traceFile(dir,'p1','r2')).find(r=>r.type==='workspace-kept');assert.equal(kept.complete,false);assert.equal(kept.skipped.at(-1).reason,'time');
 });
 
 test('two traces written at the same time keep their own sequence, and runEnd writes one record',t=>{

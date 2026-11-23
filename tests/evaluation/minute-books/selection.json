@@ -1,0 +1,109 @@
+{
+ "id": "minutes-edition-8",
+ "title": "Six edition 8 minute books, seed 82829258",
+ "generator": {
+  "repository": "skutner/lean_documents",
+  "commit": "e36c1d7b16dc39d073a399eef7806c14e0b228c8",
+  "files": {
+   "evalsuite/generate.py": {
+    "sha256": "9f166028544b24cd469116f7ee56f8d51966328b5df7742b75d16484e190ee98",
+    "size": 71620
+   },
+   "evalsuite/generate_big.py": {
+    "sha256": "b5845edbe6a8552a8c97fc9eb69e53d9791416d2c18dfefd18b2b1fe98285eb0",
+    "size": 7989
+   },
+   "evalsuite/big_minutes.py": {
+    "sha256": "bddbc2a088ab4ec5824233a688909e71fab472882e7941827fb28f77085b1180",
+    "size": 260582
+   }
+  },
+  "script": "evalsuite/generate_big.py",
+  "arguments": [
+   "--seed",
+   "82829258",
+   "--dossiers",
+   "6",
+   "--families",
+   "minutes"
+  ],
+  "environment": {
+   "BIG_MINUTES_EDITION": "8"
+  }
+ },
+ "dossiers": {
+  "g82829258-001-minutes": {
+   "files": {
+    "report-correct.md": "342c3229907063fcd7bbd4d1d0249d99c53d32b071bd4ec1714b856c972ffac6",
+    "report-mixed.md": "f1c900ee73e289876ce85e3a86a46ade7848e86199899ba904ca04b91d99491b",
+    "sources/minute-book-1.md": "bb1db390dc43061528a8940ebfb1644b57556eda070cf86db4c823ef7586a702",
+    "sources/minute-book-2.md": "a9fcd14b92aa4324953504496715083d5ee59458e6d6422a945c2817acd15848",
+    "sources/minute-book-3.md": "1053b5583c1fbfed7b0ebdebdb64f34af80f3b7c2694da1b31ccf8f974380f53",
+    "sources/minute-book-4.md": "c863a536c684f177f5336a11fb67c07f8a1ae704b40703214d480efb3d0f2f40",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "b71c32762aad77efa59888080217b0b9fd81491ee4db104a72c1329f4e98b7b5"
+  },
+  "g82829258-002-minutes": {
+   "files": {
+    "report-correct.md": "09706b011aac7a874c24be0248b39b4195b2d7e25e1866d00a81eab3a40d93f1",
+    "report-mixed.md": "488672079c7d13b18338059aaa8007aeb4e153be6729e2b42b90fee5e725d366",
+    "sources/minute-book-1.md": "2362810f428a5af27f1ba041082d8a6c759b89fa7c5233d751558789c68fb9bb",
+    "sources/minute-book-2.md": "b87274c15e2e7b1f197c2e7852e0143e4da0776f4e08c9859679bd12b182b894",
+    "sources/minute-book-3.md": "4473b639cddc7684c37f8ac26cabc7d6e86b2adbb0b88a3d10e8b80ca4d15718",
+    "sources/minute-book-4.md": "3eea1745924df8b403680eefb5d2283bd1bb33ddd6ecdc51057bb20dadc9998b",
+    "sources/minute-book-5.md": "c1b20eb107e42bb59010480f3c33df89ae91744958484c087e84f10c92751d3c",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "625a111e938dd2dd70f95221a54dd70bc26e0e88e2aa9d2f8476440d50f08c90"
+  },
+  "g82829258-003-minutes": {
+   "files": {
+    "report-correct.md": "c530eea416ecac547713e26a7c7dccb976970fe8119d1ab8f6d8ad0d498ba464",
+    "report-mixed.md": "ea00492095802e49400f7692fd8e40de13317d2bd10613c8362060d154d92e60",
+    "sources/minute-book-1.md": "42675cceb13b2f706fbf488e0b6b299c65814c2e7eb4d79e5cdc2dde98bd99c7",
+    "sources/minute-book-2.md": "572cf224d8f2b658c05373d20b39ff37b04b805dfcf4aafecb7fc72333140c9f",
+    "sources/minute-book-3.md": "0f149e8857830fd1863431eac7a72e37b116a00b32b60c755eb9281eb6602d20",
+    "sources/minute-book-4.md": "3e7ce427b0a2afe15fb02162d3623c6c7fd49d76d65b87a847439b430a130324",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "411446b8af8cf4d935711fb1b09146313c665fde771be1b940b0008dd01daab2"
+  },
+  "g82829258-004-minutes": {
+   "files": {
+    "report-correct.md": "f62560f2d2544a375df3396c0c224cd129a97b69840a67398ebf122f8780648b",
+    "report-mixed.md": "8aa5ff1c48716cd17e12fc7b532a73ec921d4be291dd81181c0ab1bea29cf946",
+    "sources/minute-book-1.md": "1bb3a8732ff6373d8c13ada31fc40226438ea50006721a38f75197ea37655681",
+    "sources/minute-book-2.md": "bc570d104d9c09188c99a54bdbc29925dec844d5083a09a38f8c45bb86de64e8",
+    "sources/minute-book-3.md": "8b2b7e79d502f84b1927ef61bb3cb425c992d4bbe1cfd6ad021f8cd87678e57b",
+    "sources/minute-book-4.md": "c6e8daeaa9464d61042a6acc947c7a8c727d40328ef8fb63fc2bc7d37cd917b9",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "0172ecc9e44f246f628dcac3e7f3623f7681a7754f9482043279741f762c9711"
+  },
+  "g82829258-005-minutes": {
+   "files": {
+    "report-correct.md": "4cec7513fdbe8b7a3fbe307669682e52e094dd730221778f733c72e8f9b9b02e",
+    "report-mixed.md": "9c40ec73372404af7cf26b40e366abb7246a9ed75819c25b7407e614a7d0ed10",
+    "sources/minute-book-1.md": "c3ffb77818fa4c139b5a7e5830afcc9412f827a39f7a7d6e32a3f850436c7082",
+    "sources/minute-book-2.md": "8cf0d68c1566ffed42b1552bbfae24502d63adfad6825f96ba5e48c7713d9af7",
+    "sources/minute-book-3.md": "e619c3f19bd42461292f5df2f88e147f5617267049492652ce87872ac8419bb0",
+    "sources/minute-book-4.md": "c498e3f1dc627651e0e8ddfd52928800edb82f336b7f30dbe2de3fc98c4049d8",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "ec7eefaea65f6d62560621f60db5994ee6c5aaee819991f7c3edc9e09bb4413b"
+  },
+  "g82829258-006-minutes": {
+   "files": {
+    "report-correct.md": "3df554d6cc23fb8077540c4fe522c8ada36af6e47b28f2b86c1fe76e5689cf26",
+    "report-mixed.md": "4bf86a863f9cf00a7cd4515402b7f37fd8fc3b751b8e7f6afd6e41c4e1d68de7",
+    "sources/minute-book-1.md": "05cabf09a748c8205ae27764fa42ed7204e0b8bb440192f740f5618517cd21c6",
+    "sources/minute-book-2.md": "f44d482d771be1b2b93b21ee47288e8ce8b854efaca84639bc2f8cee912244c9",
+    "sources/minute-book-3.md": "feadaa2b0c7b702d4b093b47b18d37df8224388f092a4353764e8d8b7436a86d",
+    "sources/minute-book-4.md": "7b6aa7322f2234b3b0a0f42891a0ddcd909d4e457a0094501576fd3398bf3f47",
+    "sources/procedure.md": "91789a50e53138ca3c550e03ef14c70a2f3a188ec77bf428247f44fc77e44eb7"
+   },
+   "key_sha256": "b44f0de97bface33fc514949b0edf2fc5e2f881289d4d4c387a04f86afd397b1"
+  }
+ }
+}

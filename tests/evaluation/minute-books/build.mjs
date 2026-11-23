@@ -17,16 +17,18 @@ function parseArgs(argv){
  for(let i=0;i<argv.length;i++){
   const a=argv[i],value=()=>{if(i+1>=argv.length)throw Error(`${a} needs a value.`);return argv[++i];};
   if(a==='--data')args.data=path.resolve(value());else if(a==='--offline')args.offline=true;
-  else if(a==='--lean-documents')args.checkout=path.resolve(value());else if(a==='--python')args.python=value();
+  else if(a==='--lean-documents')args.checkout=path.resolve(value());
+  else if(a==='--python'){const p=value();args.python=p.includes('/')||p.includes(path.sep)?path.resolve(p):p;}
   else throw Error(`Unknown argument: ${a}`);
  }
  return args;
 }
 
 // One generator file: from the cache, else from a local lean_documents checkout, else from GitHub at the pinned commit.
+// Returns the verified bytes.
 async function generatorFile(generator,file,entry,dir,args){
  const local=path.join(dir,file),matches=b=>b.length===entry.size&&sha256(b)===entry.sha256;
- if(fs.existsSync(local)){const b=fs.readFileSync(local);if(matches(b))return;throw Error(`${local} does not match selection.json; delete it to fetch it again.`);}
+ if(fs.existsSync(local)){const b=fs.readFileSync(local);if(matches(b))return b;throw Error(`${local} does not match selection.json; delete it to fetch it again.`);}
  let buffer,origin;
  if(args.checkout){
   const run=spawnSync('git',['-C',args.checkout,'show',`${generator.commit}:${file}`],{maxBuffer:64*1024*1024});
@@ -40,6 +42,7 @@ async function generatorFile(generator,file,entry,dir,args){
  }
  if(!matches(buffer))throw Error(`${file} from ${origin} does not match selection.json.`);
  fs.mkdirSync(path.dirname(local),{recursive:true});fs.writeFileSync(local,buffer);
+ return buffer;
 }
 
 async function main(){
@@ -49,17 +52,23 @@ async function main(){
  if(problems.length)throw Error(`selection.json is not valid:\n${problems.join('\n')}`);
  const g=selection.generator,target=path.join(args.data,'build',selection.id);
  if(fs.existsSync(target))throw Error(`${target} already exists; delete it to build again.`);
- const generatorDir=path.join(args.data,'cache',`lean_documents-${g.commit}`);
- for(const [file,entry] of Object.entries(g.files))await generatorFile(g,file,entry,generatorDir,args);
+ const cacheDir=path.join(args.data,'cache',`lean_documents-${g.commit}`),verified={};
+ for(const [file,entry] of Object.entries(g.files))verified[file]=await generatorFile(g,file,entry,cacheDir,args);
 
- // Write into a fresh folder beside the target and move it into place only after every hash has matched.
- const staging=path.join(args.data,'build',`.${selection.id}-${crypto.randomBytes(6).toString('hex')}`);
- fs.mkdirSync(path.dirname(staging),{recursive:true});
+ // The generator runs from a fresh folder that holds only the verified files, so nothing else placed in the cache
+ // (a module that would shadow the standard library, a stale __pycache__) is loaded. Its output goes to a staging
+ // folder beside the target, moved into place only after every hash has matched.
+ const suffix=crypto.randomBytes(6).toString('hex');
+ const runDir=path.join(args.data,'build',`.generator-${suffix}`),staging=path.join(args.data,'build',`.${selection.id}-${suffix}`);
+ for(const [file,buffer] of Object.entries(verified)){fs.mkdirSync(path.dirname(path.join(runDir,file)),{recursive:true});fs.writeFileSync(path.join(runDir,file),buffer);}
  const command=['-I','-B',g.script,'--fixtures',path.join(staging,'fixtures'),'--keys',path.join(staging,'keys'),...g.arguments];
  console.log(`Generating ${Object.keys(selection.dossiers).length} dossiers with ${args.python} ${g.script} (${g.repository} at ${g.commit.slice(0,12)}).`);
- const run=spawnSync(args.python,command,{cwd:generatorDir,env:{PATH:process.env.PATH||'/usr/bin:/bin',...g.environment},encoding:'utf8',maxBuffer:64*1024*1024});
- if(run.error)throw Error(`Could not start ${args.python}: ${run.error.message}`);
- if(run.status!==0)throw Error(`The generator failed (exit ${run.status}):\n${(run.stderr||'').trim().split('\n').slice(-20).join('\n')}`);
+ let run;
+ try{run=spawnSync(args.python,command,{cwd:runDir,env:{PATH:process.env.PATH||'/usr/bin:/bin',...g.environment},encoding:'utf8',maxBuffer:64*1024*1024});}
+ finally{fs.rmSync(runDir,{recursive:true,force:true});}
+ const leftover=fs.existsSync(staging)?` Partial output, which may hold answer keys, is in ${staging}; delete it.`:'';
+ if(run.error)throw Error(`Could not start ${args.python}: ${run.error.message}.${leftover}`);
+ if(run.status!==0)throw Error(`The generator failed (exit ${run.status}).${leftover}\n${(run.stderr||'').trim().split('\n').slice(-20).join('\n')}`);
  const mismatches=buildProblems(staging,selection);
  if(mismatches.length)throw Error(`The build differs from selection.json; nothing was moved into place. Inspect ${staging}, then delete it.\n${mismatches.slice(0,40).join('\n')}`);
  fs.renameSync(staging,target);

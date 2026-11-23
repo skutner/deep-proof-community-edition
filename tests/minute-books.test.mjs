@@ -45,13 +45,17 @@ test('A build is accepted only when every file and key matches, with nothing mis
  const write=(rel,text)=>{fs.mkdirSync(path.dirname(path.join(root,rel)),{recursive:true});fs.writeFileSync(path.join(root,rel),text);};
  const small={dossiers:{'g1-001-minutes':{files:{'report-correct.md':h('A'),'sources/minute-book-1.md':h('B')},key_sha256:h('K')}}};
  write('fixtures/g1-001-minutes/report-correct.md','A');write('fixtures/g1-001-minutes/sources/minute-book-1.md','B');write('keys/g1-001-minutes.json','K');
+ write('keys.generation.json','{"python":"any"}');
  assert.deepEqual(treeHashes(path.join(root,'fixtures','g1-001-minutes')),small.dossiers['g1-001-minutes'].files);
  assert.deepEqual(buildProblems(root,small),[]);
  write('fixtures/g1-001-minutes/sources/minute-book-1.md','B changed');
  write('fixtures/g1-001-minutes/sources/extra.md','E');
  write('keys/g1-001-minutes.json','K changed');
  write('keys/g9-001-minutes.json','{}');
+ write('keys/g1-001-minutes','K');
+ write('keys/g1-001-minutes.json.d/x','K');
  write('fixtures/g9-001-minutes/report-correct.md','A');
+ write('notes.txt','N');
  fs.rmSync(path.join(root,'fixtures','g1-001-minutes','report-correct.md'));
  assert.deepEqual(buildProblems(root,small).sort(),[
   'g1-001-minutes: answer key differs from the selection',
@@ -59,10 +63,19 @@ test('A build is accepted only when every file and key matches, with nothing mis
   'g1-001-minutes: sources/minute-book-1.md differs from the selection',
   'g1-001-minutes: unexpected sources/extra.md',
   'unexpected dossier g9-001-minutes',
-  'unexpected key g9-001-minutes.json'
+  'unexpected key g1-001-minutes',
+  'unexpected key g1-001-minutes.json.d',
+  'unexpected key g9-001-minutes.json',
+  'unexpected notes.txt in the build root'
  ]);
  fs.rmSync(path.join(root,'keys'),{recursive:true});
+ write('keys/g1-001-minutes.json/inner','K');
+ assert.ok(buildProblems(root,small).includes('g1-001-minutes: answer key is not a regular file'));
+ fs.rmSync(path.join(root,'keys'),{recursive:true});
  assert.ok(buildProblems(root,small).includes('g1-001-minutes: missing answer key'));
+ fs.rmSync(path.join(root,'fixtures','g1-001-minutes'),{recursive:true});
+ write('fixtures/g1-001-minutes','not a folder');
+ assert.ok(buildProblems(root,small).includes('dossier g1-001-minutes is not a folder'));
 });
 
 test('The recipe folder ships no books, keys or private material, and its build output is ignored by Git',()=>{
@@ -70,6 +83,7 @@ test('The recipe folder ships no books, keys or private material, and its build 
  const walk=dir=>{for(const e of fs.readdirSync(dir,{withFileTypes:true})){
   const full=path.join(dir,e.name),rel=path.relative(folder,full).split(path.sep).join('/');
   if(rel==='.data'){shipped.push('.data/.gitignore');continue;}
+  if(e.name==='.DS_Store')continue; // written by macOS Finder, never committed
   if(e.isDirectory())walk(full);else shipped.push(rel);
  }};
  walk(folder);

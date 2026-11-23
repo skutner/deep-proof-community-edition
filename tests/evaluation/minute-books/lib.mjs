@@ -52,15 +52,22 @@ export function treeHashes(root){
  return out;
 }
 
-// Compares a build (fixtures/<dossier>/..., keys/<dossier>.json) with the selection. Returns a list of problems.
+// Compares a build (fixtures/<dossier>/..., keys/<dossier>.json, keys.generation.json) with the selection.
+// Returns a list of problems. The generation summary is allowed but not compared: it records the Python version.
+export const BUILD_ROOT_ENTRIES=['fixtures','keys','keys.generation.json'];
 export function buildProblems(buildRoot,selection){
  const problems=[],fixtures=path.join(buildRoot,'fixtures'),keys=path.join(buildRoot,'keys');
  const want=selection.dossiers;
- const have=fs.existsSync(fixtures)?fs.readdirSync(fixtures):[];
- for(const id of have)if(!Object.hasOwn(want,id))problems.push(`unexpected dossier ${id}`);
+ for(const name of fs.existsSync(buildRoot)?fs.readdirSync(buildRoot):[])if(!BUILD_ROOT_ENTRIES.includes(name))problems.push(`unexpected ${name} in the build root`);
+ const have=fs.existsSync(fixtures)?fs.readdirSync(fixtures,{withFileTypes:true}):[];
+ for(const e of have){
+  if(!Object.hasOwn(want,e.name))problems.push(`unexpected dossier ${e.name}`);
+  else if(!e.isDirectory())problems.push(`dossier ${e.name} is not a folder`);
+ }
  for(const [id,d] of Object.entries(want)){
   const dir=path.join(fixtures,id);
   if(!fs.existsSync(dir)){problems.push(`missing dossier ${id}`);continue;}
+  if(!fs.lstatSync(dir).isDirectory())continue;
   const got=treeHashes(dir);
   for(const [file,hash] of Object.entries(d.files)){
    if(!Object.hasOwn(got,file))problems.push(`${id}: missing ${file}`);
@@ -69,9 +76,10 @@ export function buildProblems(buildRoot,selection){
   for(const file of Object.keys(got))if(!Object.hasOwn(d.files,file))problems.push(`${id}: unexpected ${file}`);
   const key=path.join(keys,`${id}.json`);
   if(!fs.existsSync(key))problems.push(`${id}: missing answer key`);
+  else if(!fs.lstatSync(key).isFile())problems.push(`${id}: answer key is not a regular file`);
   else if(sha256(fs.readFileSync(key))!==d.key_sha256)problems.push(`${id}: answer key differs from the selection`);
  }
  const keyFiles=fs.existsSync(keys)?fs.readdirSync(keys):[];
- for(const name of keyFiles)if(!Object.hasOwn(want,name.replace(/\.json$/,'')))problems.push(`unexpected key ${name}`);
+ for(const name of keyFiles)if(!name.endsWith('.json')||!Object.hasOwn(want,name.slice(0,-5)))problems.push(`unexpected key ${name}`);
  return problems;
 }

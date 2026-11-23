@@ -2,7 +2,7 @@
 
 Status: not validated. This is development material for evaluating document reviewers; it does not certify an Analyst Skill and its results are not real-world accuracy claims. It sits outside the runtime skill and is never copied into agent jobs.
 
-This folder rebuilds the six generated minute books behind the comparison published at [deepproof.ch/two-agents-six-minute-books.html](https://deepproof.ch/two-agents-six-minute-books.html), with their answer keys, byte for byte. Nothing of the books or keys is committed: `selection.json` pins the generator, the seed and the SHA-256 of every file, and `build.mjs` regenerates them into `.data/` (ignored by Git) and refuses any result that differs.
+This folder rebuilds the six generated minute books behind the comparison published at [deepproof.ch/two-agents-six-minute-books.html](https://deepproof.ch/two-agents-six-minute-books.html), with their answer keys, byte for byte. Nothing of the books or keys is committed: `selection.json` pins the generator, the seed and the SHA-256 of every book file and key, and `build.mjs` regenerates them into `.data/` (ignored by Git) and refuses a build in which any of them differs.
 
 ## What the Books Are
 
@@ -11,20 +11,20 @@ Each dossier is a committee minute book of four or five long volumes (`sources/m
 | Item | Value |
 | --- | --- |
 | Generator | `skutner/lean_documents` at `e36c1d7b16dc39d073a399eef7806c14e0b228c8`: `evalsuite/generate_big.py`, `evalsuite/generate.py`, `evalsuite/big_minutes.py` |
-| Command | `BIG_MINUTES_EDITION=8 python3 -I -B evalsuite/generate_big.py --seed 82829258 --dossiers 6 --families minutes` |
-| Dossiers | `g82829258-001-minutes` to `g82829258-006-minutes`, about 2.8 MB of fixtures and 4.0 MB of answer keys |
+| Command | `BIG_MINUTES_EDITION=8 python3 -I -B evalsuite/generate_big.py --fixtures NEW_DIR --keys NEW_DIR --seed 82829258 --dossiers 6 --families minutes` |
+| Dossiers | `g82829258-001-minutes` to `g82829258-006-minutes`, about 2.9 MB of fixtures and 4.2 MB of answer keys |
 
 ## Recorded Results
 
-These are the counts published with the article and its [replication guide](https://deepproof.ch/testing-data/astra-comparison/guide.txt), from the per-review rows in [reviews.csv](https://deepproof.ch/testing-data/astra-comparison/reviews.csv). Each model reviewed every report twice in a fresh session: 24 reviews, 576 answers. An answer is right only when both its verdict and its value match the key.
+Each model reviewed every report twice, each time in a fresh session: 24 reviews and 576 answers per model. An answer is right only when both its verdict and its value match the key. Four reviews share each book, so they are not independent samples of document reading.
 
-| Model, effort | Answers not right | Reviews with at least one |
-| --- | --- | --- |
-| gpt-6-astra, xhigh | 169 of 576 | 12 of 24 |
-| gpt-6.2-astra, xhigh | 0 of 576 | 0 of 24 |
-| gpt-6.2-sol, xhigh | 89 of 576 | 6 of 24 |
+| Model, effort | Answers not right | Reviews with at least one | Source |
+| --- | --- | --- | --- |
+| gpt-6-astra, xhigh | 169 of 576 | 12 of 24 | [replication guide](https://deepproof.ch/testing-data/astra-comparison/guide.txt), per-review rows in [reviews.csv](https://deepproof.ch/testing-data/astra-comparison/reviews.csv) |
+| gpt-6.2-astra, xhigh | 0 of 576 | 0 of 24 | the same guide and rows |
+| gpt-6.2-sol, xhigh | 89 of 576 | 6 of 24 | the [article](https://deepproof.ch/two-agents-six-minute-books.html) only; its three stages were read separately, with no test fixed in advance for their sum |
 
-The recorded reviews ran in November 2026 through AdvancedLanguageAgent at `cae1563` with the Codex CLI (0.168.0 for gpt-6-astra, 0.170.0 for gpt-6.2-astra), the plain arm of `evalsuite/arms-shown-sums.json`, a fresh working folder and private home per review and a one-hour limit. They were launched by a private study harness that is not part of this repository. Four reviews share each book, so they are not independent samples of document reading.
+The two astra runs went through AdvancedLanguageAgent at `cae1563` with the Codex CLI (0.168.0 for gpt-6-astra, 0.170.0 for gpt-6.2-astra), the plain arm of `evalsuite/arms-shown-sums.json`, a fresh working folder and private home per review and a one-hour limit, as the guide states. All recorded reviews were launched by a private study harness that is not part of this repository.
 
 ## Build
 
@@ -41,7 +41,7 @@ The build downloads the three generator files from GitHub at the pinned commit (
 | `--data DIR` | Writes the cache and the build to `DIR` instead of `.data/`. |
 | `--python PYTHON` | The Python 3 interpreter; `python3` by default. Python 3.9 and 3.12 give the same bytes. |
 
-The build refuses to overwrite an existing build, refuses a cached generator file that no longer matches, and leaves a build that differs from the selection in a staging folder without moving it into place.
+The build refuses to overwrite an existing build and refuses a cached generator file that no longer matches. It runs the generator from a fresh copy of the three verified files, so nothing else in the cache is loaded. A build with a missing, extra or different book file or key stays in a staging folder, which the error names, and is not moved into place. `keys.generation.json` is not hash-checked, because it records the Python version.
 
 ## Layout and Blinding
 
@@ -50,11 +50,11 @@ The build refuses to overwrite an existing build, refuses a cached generator fil
 | `fixtures/<dossier>/report-correct.md`, `report-mixed.md` | The reports to check | One report per review |
 | `fixtures/<dossier>/sources/` | The minute book volumes and the procedure | Yes, with that report |
 | `keys/<dossier>.json` | Answer key: every generated fact, each statement's verdict and value, and how to recompute it | Never |
-| `keys.generation.json` | Generation summary | No |
+| `keys.generation.json` | Generation summary; it counts the planted errors, so it is answer material | Never |
 
 - Give a reviewing agent only a copy of one report and its `sources/` folder, in a folder that holds nothing else. Never give it this repository, `.data/`, the build root or the keys. Run reviews without network access where possible.
 - Deep Proof starts reviews through ALA with your home folder as the agent home (`src/ala.mjs`), so files under your home folder may be readable by such a review. When you run reviews on the same machine, build with `--data` outside your home folder or move the keys away first.
-- The generator and the seed are public, so anyone can rebuild these keys, and the books have published results. Treat them as development material, never as a held-out or final partition (see [../report-quality/README.md](../report-quality/README.md)).
+- The generator and the seed are public, so anyone can rebuild these keys, and the books have published results. Treat them as development material, never as a held-out or final partition; [../report-quality/README.md](../report-quality/README.md) gives the rules for splitting an evaluation by document family.
 - The keys written here are not sealed. `evalsuite/blindness.py seal` in `lean_documents` copies them outside the agent's folders and embeds a canary that a leak scan can find. A key used without sealing carries no canary.
 
 ## Fresh Reviews and Scoring
@@ -68,10 +68,10 @@ python3 evalsuite/blindness.py seal --source BUILD/keys --dest /campaign/sealed 
 python3 evalsuite/run_blind.py plan --fixtures BUILD/fixtures --keys /campaign/sealed --arena /campaign/arena \
   --out /campaign/out --arms plain --arms-file evalsuite/arms-shown-sums.json \
   --agent codex --model MODEL --effort xhigh --minutes 60 --repeats 2 --agent-home /campaign/agent-home
-python3 evalsuite/check_shown.py --campaign /campaign/out --keys /campaign/sealed --arm plain --output shown.json
+env -u BIG_MINUTES_EDITION python3 evalsuite/check_shown.py --campaign /campaign/out --keys /campaign/sealed --arm plain --output shown.json
 ```
 
-`plan` starts nothing; `probe` and then `run` with the same arguments start the reviews, and only `run` calls a model. This invocation has not been run on these books: the runner's options are documented in `lean_documents`, and a fresh campaign measures its own reviews. It does not reproduce the recorded ones, which are summed in the published CSV.
+`/campaign/agent-home` must hold only a login made for the campaign, as that README explains. `plan` starts nothing; `probe` and then `run` with the same arguments start the reviews, and only `run` calls a model. This invocation has not been run on these books: the runner's options are documented in `lean_documents`, and a fresh campaign measures its own reviews. It does not reproduce the recorded ones, which are summed in the published CSV.
 
 ## Licence and Provenance
 

@@ -83,7 +83,7 @@ test('The recipe folder ships no books, keys or private material, and its build 
  const walk=dir=>{for(const e of fs.readdirSync(dir,{withFileTypes:true})){
   const full=path.join(dir,e.name),rel=path.relative(folder,full).split(path.sep).join('/');
   if(rel==='.data'){shipped.push('.data/.gitignore');continue;}
-  if(e.name==='.DS_Store')continue; // written by macOS Finder, never committed
+  if(e.name==='.DS_Store')continue; // written by macOS Finder; not part of the recipe and not to be committed
   if(e.isDirectory())walk(full);else shipped.push(rel);
  }};
  walk(folder);

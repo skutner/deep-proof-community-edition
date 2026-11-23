@@ -11,12 +11,12 @@ Each dossier is a committee minute book of four or five long volumes (`sources/m
 | Item | Value |
 | --- | --- |
 | Generator | `skutner/lean_documents` at `e36c1d7b16dc39d073a399eef7806c14e0b228c8`: `evalsuite/generate_big.py`, `evalsuite/generate.py`, `evalsuite/big_minutes.py` |
-| Command | `BIG_MINUTES_EDITION=8 python3 -I -B evalsuite/generate_big.py --fixtures NEW_DIR --keys NEW_DIR --seed 82829258 --dossiers 6 --families minutes` |
+| Command | `BIG_MINUTES_EDITION=8 python3 -I -B evalsuite/generate_big.py --fixtures FIXTURES_DIR --keys KEYS_DIR --seed 82829258 --dossiers 6 --families minutes` |
 | Dossiers | `g82829258-001-minutes` to `g82829258-006-minutes`, about 2.9 MB of fixtures and 4.2 MB of answer keys |
 
 ## Recorded Results
 
-Each model reviewed every report twice, each time in a fresh session: 24 reviews and 576 answers per model. An answer is right only when both its verdict and its value match the key. Four reviews share each book, so they are not independent samples of document reading.
+Each model has 24 reviews and 576 answers on these books; the two astra models reviewed every report twice, each time in a fresh session. An answer is right only when both its verdict and its value match the key. Four reviews share each book, so they are not independent samples of document reading.
 
 | Model, effort | Answers not right | Reviews with at least one | Source |
 | --- | --- | --- | --- |
@@ -71,7 +71,7 @@ python3 evalsuite/run_blind.py plan --fixtures BUILD/fixtures --keys /campaign/s
 env -u BIG_MINUTES_EDITION python3 evalsuite/check_shown.py --campaign /campaign/out --keys /campaign/sealed --arm plain --output shown.json
 ```
 
-`/campaign/agent-home` must hold only a login made for the campaign, as that README explains. `plan` starts nothing; `probe` and then `run` with the same arguments start the reviews, and only `run` calls a model. This invocation has not been run on these books: the runner's options are documented in `lean_documents`, and a fresh campaign measures its own reviews. It does not reproduce the recorded ones, which are summed in the published CSV.
+`/campaign/agent-home` must hold only a login made for the campaign, as that README explains. `plan` starts nothing; `probe` and then `run` with the same arguments start the reviews, and only `run` calls a model. This invocation has not been run on these books: the runner's options are documented in `lean_documents`, and a fresh campaign measures its own reviews. It does not reproduce the recorded reviews; the two astra runs are summed in the published CSV, and the gpt-6.2-sol counts are published only in the article.
 
 ## Licence and Provenance
 
